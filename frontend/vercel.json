@@ -1,7 +1,7 @@
 {
-  "rewrites": [
-    { "source": "/__/auth/**", "destination": "/__/auth/:splat" },
-    { "source": "/api/**", "destination": "/api/:splat" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "src": "^/__/auth/.*", "dest": "/__/auth" },
+    { "src": "^/api/.*", "dest": "/api" },
+    { "src": "^/(.*)", "dest": "/index.html" }
   ]
 }
