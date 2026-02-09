@@ -24,13 +24,13 @@ function PrivateRoute({ children }) {
       </div>
     )
   }
-  return currentUser ? children : <Navigate to="/login" />
+  return currentUser ? children : <Navigate to="/login" replace />
 }
 
 function AdminRoute({ children }) {
   const { isAdmin, loading } = useAuth()
   if (loading) return null
-  return isAdmin ? children : <Navigate to="/" />
+  return isAdmin ? children : <Navigate to="/" replace />
 }
 
 function PublicRoute({ children }) {
@@ -42,7 +42,7 @@ function PublicRoute({ children }) {
       </div>
     )
   }
-  return currentUser ? <Navigate to="/" /> : children
+  return currentUser ? <Navigate to="/" replace /> : children
 }
 
 function App() {
@@ -103,7 +103,7 @@ function App() {
             <Route index element={<AdminUsers />} />
             <Route path="corsi" element={<AdminCorsi />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
@@ -111,4 +111,5 @@ function App() {
 }
 
 export default App
+
 
