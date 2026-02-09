@@ -69,7 +69,7 @@ export default function Login() {
             </div>
           </div>
           <h1 className="text-2xl font-bold text-gray-800">Hoop Lab</h1>
-          <p className="text-sm text-gray-500 mt-1">Danza aerea con il cerchio</p>
+          <p className="text-sm text-gray-500 mt-1">Benvenuti!</p>
         </div>
 
         {/* Form card */}
@@ -150,3 +150,4 @@ export default function Login() {
     </div>
   )
 }
+
