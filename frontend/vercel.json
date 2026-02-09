@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/__/auth/**", "destination": "/__/auth/:splat" },
+    { "source": "/api/**", "destination": "/api/:splat" },
+    { "source": "/(.*)", "destination": "/" }
+  ]
+}
