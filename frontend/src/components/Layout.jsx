@@ -26,6 +26,11 @@ export default function Layout({ children }) {
             </span>
           </div>
         </header>
+
+        {/* Content */}
+        <main className="max-w-lg mx-auto px-4 py-4">
+          {children}
+        </main>
       </div>
 
       {/* Bottom nav */}
@@ -54,4 +59,3 @@ export default function Layout({ children }) {
     </div>
   )
 }
-
