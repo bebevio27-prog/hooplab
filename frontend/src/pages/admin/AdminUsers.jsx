@@ -19,17 +19,17 @@ import { cn } from '../../lib/utils'
 
 export default function AdminUsers() {
   const { currentUser } = useAuth()
-  const { 
-    users, 
-    usersLoaded, 
-    loadUsers, 
-    updateUserInStore, 
+  const {
+    users,
+    usersLoaded,
+    loadUsers,
+    updateUserInStore,
     removeUserFromStore,
-    currentMonthPaidMap, 
-    setCurrentMonthPaid, 
-    setCurrentMonthPaidMap: setMonthPaidMap 
+    currentMonthPaidMap,
+    setCurrentMonthPaid,
+    setCurrentMonthPaidMap: setMonthPaidMap,
   } = useAppStore()
-  
+
   const [loading, setLoading] = useState(!usersLoaded)
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState(null)
@@ -38,7 +38,6 @@ export default function AdminUsers() {
   const [saving, setSaving] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
 
-  // Delete confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
@@ -57,7 +56,6 @@ export default function AdminUsers() {
     setLoading(true)
     try {
       const data = await loadUsers()
-      // Preload current month payment status for mensile users
       const mensileUsers = data.filter((u) => u.paymentType === 'mensile')
       const paidMap = {}
       await Promise.all(
@@ -178,21 +176,17 @@ export default function AdminUsers() {
 
   async function handleDeleteUser() {
     if (!userToDelete) return
-    
     setDeleting(true)
     try {
       await deleteUserProfile(userToDelete.id)
       removeUserFromStore(userToDelete.id)
-      
-      // Close modals
       setShowDeleteConfirm(false)
       setSelectedUser(null)
       setUserToDelete(null)
-      
       alert('Utente eliminato con successo')
     } catch (err) {
       console.error('Error deleting user:', err)
-      alert('Errore durante l\'eliminazione dell\'utente')
+      alert("Errore durante l'eliminazione dell'utente")
     } finally {
       setDeleting(false)
     }
@@ -206,40 +200,39 @@ export default function AdminUsers() {
         (u.email || '').toLowerCase().includes(search.toLowerCase())
     )
     .sort((a, b) => {
-      const aOk = a.paymentType === 'per-lesson'
-        ? getUserBookingsCount(a.id) - (a.lessonsPaid || 0) <= 0
-        : a.paymentType === 'mensile'
-          ? (currentMonthPaidMap[a.id] || false)
+      const aOk =
+        a.paymentType === 'per-lesson'
+          ? getUserBookingsCount(a.id) - (a.lessonsPaid || 0) <= 0
+          : a.paymentType === 'mensile'
+          ? currentMonthPaidMap[a.id] || false
           : true
-      const bOk = b.paymentType === 'per-lesson'
-        ? getUserBookingsCount(b.id) - (b.lessonsPaid || 0) <= 0
-        : b.paymentType === 'mensile'
-          ? (currentMonthPaidMap[b.id] || false)
+      const bOk =
+        b.paymentType === 'per-lesson'
+          ? getUserBookingsCount(b.id) - (b.lessonsPaid || 0) <= 0
+          : b.paymentType === 'mensile'
+          ? currentMonthPaidMap[b.id] || false
           : true
       return aOk === bOk ? 0 : aOk ? 1 : -1
     })
 
-  // Calculate unpaid summary
   const unpaidSummary = users
     .filter((u) => u.id !== currentUser?.uid)
-    .reduce((acc, user) => {
-      if (user.paymentType === 'mensile') {
-        const isPaid = currentMonthPaidMap[user.id] || false
-        if (!isPaid) {
-          acc.mensileUnpaid.push(user)
+    .reduce(
+      (acc, user) => {
+        if (user.paymentType === 'mensile') {
+          const isPaid = currentMonthPaidMap[user.id] || false
+          if (!isPaid) acc.mensileUnpaid.push(user)
+        } else if (user.paymentType === 'per-lesson') {
+          const booked = getUserBookingsCount(user.id)
+          const paid = user.lessonsPaid || 0
+          const delta = booked - paid
+          if (delta > 0) acc.perLessonUnpaid.push({ user, delta })
         }
-      } else if (user.paymentType === 'per-lesson') {
-        const booked = getUserBookingsCount(user.id)
-        const paid = user.lessonsPaid || 0
-        const delta = booked - paid
-        if (delta > 0) {
-          acc.perLessonUnpaid.push({ user, delta })
-        }
-      }
-      return acc
-    }, { mensileUnpaid: [], perLessonUnpaid: [] })
+        return acc
+      },
+      { mensileUnpaid: [], perLessonUnpaid: [] }
+    )
 
-  // Generate last 6 months for monthly payment view
   const recentMonths = Array.from({ length: 6 }, (_, i) => {
     const d = subMonths(new Date(), i)
     return format(d, 'yyyy-MM')
@@ -259,23 +252,24 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-4">
-      {/* Summary of unpaid users */}
+
+      {/* Pagamenti in sospeso */}
       {(unpaidSummary.mensileUnpaid.length > 0 || unpaidSummary.perLessonUnpaid.length > 0) && (
         <Card className="bg-amber-50 border-amber-200">
           <div className="flex items-start gap-3">
             <AlertCircle className="text-amber-600 mt-0.5 flex-shrink-0" size={20} />
             <div className="flex-1 space-y-3">
               <h3 className="font-semibold text-amber-900">Pagamenti in sospeso</h3>
-              
+
               {unpaidSummary.mensileUnpaid.length > 0 && (
                 <div>
                   <p className="text-sm text-amber-800 font-medium mb-2">
                     Mensili non pagati ({unpaidSummary.mensileUnpaid.length}):
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {unpaidSummary.mensileUnpaid.map(user => (
-                      <Badge 
-                        key={user.id} 
+                    {unpaidSummary.mensileUnpaid.map((user) => (
+                      <Badge
+                        key={user.id}
                         variant="warning"
                         className="cursor-pointer hover:bg-amber-200"
                         onClick={() => openUserDetail(user)}
@@ -294,8 +288,8 @@ export default function AdminUsers() {
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {unpaidSummary.perLessonUnpaid.map(({ user, delta }) => (
-                      <Badge 
-                        key={user.id} 
+                      <Badge
+                        key={user.id}
                         variant="warning"
                         className="cursor-pointer hover:bg-amber-200"
                         onClick={() => openUserDetail(user)}
@@ -311,7 +305,7 @@ export default function AdminUsers() {
         </Card>
       )}
 
-      {/* Search bar */}
+      {/* Barra di ricerca */}
       <div className="flex items-center gap-3">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -325,11 +319,9 @@ export default function AdminUsers() {
         </div>
       </div>
 
-      {/* Users list */}
+      {/* Lista utenti */}
       {filteredUsers.length === 0 ? (
-        <Card className="text-center py-8 text-gray-400">
-          Nessun utente trovato
-        </Card>
+        <Card className="text-center py-8 text-gray-400">Nessun utente trovato</Card>
       ) : (
         <div className="space-y-2">
           {filteredUsers.map((user) => {
@@ -337,8 +329,8 @@ export default function AdminUsers() {
               user.paymentType === 'per-lesson'
                 ? getUserBookingsCount(user.id) - (user.lessonsPaid || 0) <= 0
                 : user.paymentType === 'mensile'
-                  ? (currentMonthPaidMap[user.id] || false)
-                  : true
+                ? currentMonthPaidMap[user.id] || false
+                : true
 
             return (
               <Card
@@ -354,9 +346,7 @@ export default function AdminUsers() {
                     <div
                       className={cn(
                         'w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold',
-                        isOk
-                          ? 'bg-emerald-100 text-emerald-600'
-                          : 'bg-amber-100 text-amber-600'
+                        isOk ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
                       )}
                     >
                       {(user.displayName || user.email || '?')[0].toUpperCase()}
@@ -381,7 +371,7 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Modal conferma eliminazione */}
       <Modal
         isOpen={showDeleteConfirm}
         onClose={() => !deleting && setShowDeleteConfirm(false)}
@@ -404,9 +394,7 @@ export default function AdminUsers() {
             </div>
           </div>
 
-          <p className="text-sm text-gray-600">
-            Questa azione eliminerà permanentemente:
-          </p>
+          <p className="text-sm text-gray-600">Questa azione eliminerà permanentemente:</p>
           <ul className="text-sm text-gray-600 list-disc list-inside space-y-1 ml-2">
             <li>Il profilo dell'utente</li>
             <li>Tutte le sue prenotazioni</li>
@@ -438,7 +426,7 @@ export default function AdminUsers() {
         </div>
       </Modal>
 
-      {/* User Detail Modal */}
+      {/* Modal dettaglio utente */}
       <Modal
         isOpen={!!selectedUser}
         onClose={() => setSelectedUser(null)}
@@ -450,7 +438,9 @@ export default function AdminUsers() {
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <span>{selectedUser.email}</span>
                 {selectedUser.isManuallyAdded && (
-                  <Badge variant="secondary" className="text-xs">Aggiunto manualmente</Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    Aggiunto manualmente
+                  </Badge>
                 )}
               </div>
               <button
@@ -462,7 +452,7 @@ export default function AdminUsers() {
               </button>
             </div>
 
-            {/* Payment type selector */}
+            {/* Tipo pagamento */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Tipo pagamento
@@ -493,160 +483,176 @@ export default function AdminUsers() {
               </div>
             </div>
 
-            {/* Monthly payment view */}
-            {selectedUser.paymentType === 'mensile' && (() => {
-              const currentMonth = recentMonths[0]
-              const pastMonths = recentMonths.slice(1)
-              const currentPaid = isMonthPaid(currentMonth)
-              const [cy, cm] = currentMonth.split('-')
-              const currentMonthName = format(new Date(parseInt(cy), parseInt(cm) - 1), 'MMMM yyyy', { locale: it })
+            {/* Vista pagamento mensile */}
+            {selectedUser.paymentType === 'mensile' &&
+              (() => {
+                const currentMonth = recentMonths[0]
+                const pastMonths = recentMonths.slice(1)
+                const currentPaid = isMonthPaid(currentMonth)
+                const [cy, cm] = currentMonth.split('-')
+                const currentMonthName = format(
+                  new Date(parseInt(cy), parseInt(cm) - 1),
+                  'MMMM yyyy',
+                  { locale: it }
+                )
 
-              return (
-                <div className="space-y-3">
-                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Mese corrente
-                  </label>
-                  <div
-                    className={cn(
-                      'flex items-center justify-between rounded-xl px-4 py-3 border transition-all',
-                      currentPaid
-                        ? 'bg-emerald-50 border-emerald-200'
-                        : 'bg-red-50 border-red-200'
-                    )}
-                  >
-                    <div>
-                      <span className="text-sm font-semibold text-gray-800 capitalize">{currentMonthName}</span>
-                      <p className={cn('text-xs font-medium', currentPaid ? 'text-emerald-600' : 'text-red-500')}>
-                        {currentPaid ? 'Pagato' : 'Non pagato'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleToggleMonthPaid(selectedUser.id, currentMonth, currentPaid)}
+                return (
+                  <div className="space-y-3">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                      Mese corrente
+                    </label>
+                    <div
                       className={cn(
-                        'w-10 h-10 rounded-full flex items-center justify-center transition-all',
+                        'flex items-center justify-between rounded-xl px-4 py-3 border transition-all',
                         currentPaid
-                          ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
-                          : 'bg-red-100 text-red-500 hover:bg-red-200'
+                          ? 'bg-emerald-50 border-emerald-200'
+                          : 'bg-red-50 border-red-200'
                       )}
                     >
-                      {currentPaid ? <Check size={18} /> : <X size={18} />}
-                    </button>
-                  </div>
-
-                  {/* Collapsible history */}
-                  <button
-                    onClick={() => setShowHistory((v) => !v)}
-                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-                  >
-                    <ChevronDown size={14} className={cn('transition-transform', showHistory && 'rotate-180')} />
-                    Storico ({pastMonths.length} mesi)
-                  </button>
-
-                  {showHistory && (
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                      {pastMonths.map((ym) => {
-                        const paid = isMonthPaid(ym)
-                        const [year, month] = ym.split('-')
-                        const monthName = format(new Date(parseInt(year), parseInt(month) - 1), 'MMMM yyyy', { locale: it })
-                        return (
-                          <div
-                            key={ym}
-                            className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2"
-                          >
-                            <span className="text-xs text-gray-600 capitalize">{monthName}</span>
-                            <button
-                              onClick={() => handleToggleMonthPaid(selectedUser.id, ym, paid)}
-                              className={cn(
-                                'w-6 h-6 rounded-full flex items-center justify-center transition-all',
-                                paid
-                                  ? 'bg-emerald-100 text-emerald-600'
-                                  : 'bg-red-50 text-red-400 hover:bg-red-100'
-                              )}
-                            >
-                              {paid ? <Check size={12} /> : <X size={12} />}
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* Per-lesson payment view */}
-            {selectedUser.paymentType === 'per-lesson' && (() => {
-              const booked = getUserBookingsCount(selectedUser.id)
-              const paid = selectedUser.lessonsPaid || 0
-              const delta = booked - paid
-
-              return (
-                <div className="space-y-3">
-                  {/* Delta card */}
-                  <div
-                    className={cn(
-                      'rounded-xl px-4 py-3 border text-center',
-                      delta > 0
-                        ? 'bg-amber-50 border-amber-200'
-                        : 'bg-emerald-50 border-emerald-200'
-                    )}
-                  >
-                    {delta > 0 ? (
-                      <>
-                        <p className="text-2xl font-bold text-amber-600">{delta}</p>
-                        <p className="text-xs font-medium text-amber-600">
-                          {delta === 1 ? 'lezione da saldare' : 'lezioni da saldare'}
+                      <div>
+                        <span className="text-sm font-semibold text-gray-800 capitalize">
+                          {currentMonthName}
+                        </span>
+                        <p
+                          className={cn(
+                            'text-xs font-medium',
+                            currentPaid ? 'text-emerald-600' : 'text-red-500'
+                          )}
+                        >
+                          {currentPaid ? 'Pagato' : 'Non pagato'}
                         </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-lg font-bold text-emerald-600">In pari</p>
-                        <p className="text-xs text-emerald-500">Nessun pagamento in sospeso</p>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Settle button */}
-                  {delta > 0 && (
-                    <Button
-                      className="w-full"
-                      onClick={() => handleSettle(selectedUser.id)}
-                    >
-                      <Check size={16} />
-                      Salda ({delta} {delta === 1 ? 'lezione' : 'lezioni'})
-                    </Button>
-                  )}
-
-                  {/* Info row */}
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>Prenotate: {booked}</span>
-                    <span>Pagate: {paid}</span>
-                  </div>
-
-                  {/* Manual adjust */}
-                  <div className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
-                    <span className="text-xs text-gray-500">Correggi pagate</span>
-                    <div className="flex items-center gap-2">
+                      </div>
                       <button
-                        onClick={() => handleLessonsPaidUpdate(selectedUser.id, -1)}
-                        className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                        onClick={() =>
+                          handleToggleMonthPaid(selectedUser.id, currentMonth, currentPaid)
+                        }
+                        className={cn(
+                          'w-10 h-10 rounded-full flex items-center justify-center transition-all',
+                          currentPaid
+                            ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
+                            : 'bg-red-100 text-red-500 hover:bg-red-200'
+                        )}
                       >
-                        <Minus size={12} />
-                      </button>
-                      <span className="text-sm font-semibold text-gray-700 w-6 text-center">{paid}</span>
-                      <button
-                        onClick={() => handleLessonsPaidUpdate(selectedUser.id, 1)}
-                        className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
-                      >
-                        <Plus size={12} />
+                        {currentPaid ? <Check size={18} /> : <X size={18} />}
                       </button>
                     </div>
-                  </div>
-                </div>
-              )
-            })()}
 
-            {/* Notes */}
+                    <button
+                      onClick={() => setShowHistory((v) => !v)}
+                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <ChevronDown
+                        size={14}
+                        className={cn('transition-transform', showHistory && 'rotate-180')}
+                      />
+                      Storico ({pastMonths.length} mesi)
+                    </button>
+
+                    {showHistory && (
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                        {pastMonths.map((ym) => {
+                          const paid = isMonthPaid(ym)
+                          const [year, month] = ym.split('-')
+                          const monthName = format(
+                            new Date(parseInt(year), parseInt(month) - 1),
+                            'MMMM yyyy',
+                            { locale: it }
+                          )
+                          return (
+                            <div
+                              key={ym}
+                              className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2"
+                            >
+                              <span className="text-xs text-gray-600 capitalize">{monthName}</span>
+                              <button
+                                onClick={() => handleToggleMonthPaid(selectedUser.id, ym, paid)}
+                                className={cn(
+                                  'w-6 h-6 rounded-full flex items-center justify-center transition-all',
+                                  paid
+                                    ? 'bg-emerald-100 text-emerald-600'
+                                    : 'bg-red-50 text-red-400 hover:bg-red-100'
+                                )}
+                              >
+                                {paid ? <Check size={12} /> : <X size={12} />}
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+            {/* Vista pagamento per lezione */}
+            {selectedUser.paymentType === 'per-lesson' &&
+              (() => {
+                const booked = getUserBookingsCount(selectedUser.id)
+                const paid = selectedUser.lessonsPaid || 0
+                const delta = booked - paid
+
+                return (
+                  <div className="space-y-3">
+                    <div
+                      className={cn(
+                        'rounded-xl px-4 py-3 border text-center',
+                        delta > 0
+                          ? 'bg-amber-50 border-amber-200'
+                          : 'bg-emerald-50 border-emerald-200'
+                      )}
+                    >
+                      {delta > 0 ? (
+                        <>
+                          <p className="text-2xl font-bold text-amber-600">{delta}</p>
+                          <p className="text-xs font-medium text-amber-600">
+                            {delta === 1 ? 'lezione da saldare' : 'lezioni da saldare'}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-lg font-bold text-emerald-600">In pari</p>
+                          <p className="text-xs text-emerald-500">Nessun pagamento in sospeso</p>
+                        </>
+                      )}
+                    </div>
+
+                    {delta > 0 && (
+                      <Button className="w-full" onClick={() => handleSettle(selectedUser.id)}>
+                        <Check size={16} />
+                        Salda ({delta} {delta === 1 ? 'lezione' : 'lezioni'})
+                      </Button>
+                    )}
+
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <span>Prenotate: {booked}</span>
+                      <span>Pagate: {paid}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                      <span className="text-xs text-gray-500">Correggi pagate</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleLessonsPaidUpdate(selectedUser.id, -1)}
+                          className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <span className="text-sm font-semibold text-gray-700 w-6 text-center">
+                          {paid}
+                        </span>
+                        <button
+                          onClick={() => handleLessonsPaidUpdate(selectedUser.id, 1)}
+                          className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
+            {/* Note */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
                 <StickyNote size={12} />
