@@ -249,17 +249,35 @@ export async function getSpeseFisseByMonth(yearMonth) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-// ─── Creazione Utenti (solo profilo, password al primo login) ───
+// ─── Lista Utenti da Creare ───
 
-export async function createUserProfileOnly(data) {
-  // Genera un ID casuale per l'utente
-  const userId = doc(collection(db, 'users')).id
+/**
+ * L'admin aggiunge utenti a una lista "pendingUsers"
+ * Questi utenti vengono poi creati manualmente dall'admin via Firebase Console
+ * O possono auto-registrarsi e il sistema assegna i dati dalla lista pending
+ */
+
+export async function addPendingUser(data) {
+  const pendingId = doc(collection(db, 'pendingUsers')).id
   
-  await setDoc(doc(db, 'users', userId), {
+  await setDoc(doc(db, 'pendingUsers', pendingId), {
     ...data,
-    accountSetup: false, // Flag per sapere se l'utente ha impostato la password
+    status: 'pending',
     createdAt: serverTimestamp(),
   })
   
-  return userId
+  return pendingId
+}
+
+export async function getPendingUsers() {
+  const snap = await getDocs(collection(db, 'pendingUsers'))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export async function deletePendingUser(pendingId) {
+  return deleteDoc(doc(db, 'pendingUsers', pendingId))
+}
+
+export async function updatePendingUser(pendingId, data) {
+  return updateDoc(doc(db, 'pendingUsers', pendingId), data)
 }

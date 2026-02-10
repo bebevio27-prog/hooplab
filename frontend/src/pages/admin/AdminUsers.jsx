@@ -9,7 +9,9 @@ import {
   setMonthlyPaymentStatus,
   getMonthlyPayments,
   deleteUserProfile,
-  createUserProfileOnly,
+  addPendingUser,
+  getPendingUsers,
+  deletePendingUser,
 } from '../../lib/firestore'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -50,11 +52,15 @@ export default function AdminUsers() {
     paymentType: 'mensile',
   })
   const [creating, setCreating] = useState(false)
+  
+  const [pendingUsers, setPendingUsers] = useState([])
+  const [loadingPending, setLoadingPending] = useState(false)
 
   const currentYearMonth = format(new Date(), 'yyyy-MM')
 
   useEffect(() => {
     initUsers()
+    loadPendingUsers()
   }, [])
 
   async function initUsers() {
@@ -210,9 +216,8 @@ export default function AdminUsers() {
 
     setCreating(true)
     try {
-      // Crea solo il profilo utente in Firestore
-      // L'utente imposterà la password al primo login
-      await createUserProfileOnly({
+      // Aggiungi alla lista utenti pending
+      await addPendingUser({
         email: newUserData.email,
         displayName: newUserData.displayName,
         paymentType: newUserData.paymentType,
@@ -220,8 +225,7 @@ export default function AdminUsers() {
         lessonsPaid: 0,
       })
 
-      // Ricarica la lista utenti
-      await loadUsers()
+      await loadPendingUsers()
       
       setShowCreateUser(false)
       setNewUserData({
@@ -229,12 +233,35 @@ export default function AdminUsers() {
         displayName: '',
         paymentType: 'mensile',
       })
-      alert('Utente creato! L\'utente dovrà impostare la password al primo accesso.')
+      alert(`Utente aggiunto alla lista!\n\nPer completare la registrazione:\n1. Vai su Firebase Console > Authentication\n2. Clicca "Add User"\n3. Usa email: ${newUserData.email}\n4. Genera una password temporanea\n5. Invia le credenziali all'utente`)
     } catch (err) {
       console.error('Error creating user:', err)
       alert('Errore durante la creazione dell\'utente: ' + err.message)
     } finally {
       setCreating(false)
+    }
+  }
+  
+  async function loadPendingUsers() {
+    setLoadingPending(true)
+    try {
+      const pending = await getPendingUsers()
+      setPendingUsers(pending)
+    } catch (err) {
+      console.error('Error loading pending users:', err)
+    } finally {
+      setLoadingPending(false)
+    }
+  }
+  
+  async function handleDeletePending(pendingId) {
+    if (!confirm('Rimuovere questo utente dalla lista?')) return
+    try {
+      await deletePendingUser(pendingId)
+      await loadPendingUsers()
+    } catch (err) {
+      console.error('Error deleting pending user:', err)
+      alert('Errore durante l\'eliminazione')
     }
   }
 
@@ -362,6 +389,50 @@ export default function AdminUsers() {
           Nuovo Utente
         </Button>
       </div>
+
+      {/* Utenti in attesa di registrazione */}
+      {pendingUsers.length > 0 && (
+        <Card className="bg-blue-50 border-blue-200">
+          <div className="flex items-start gap-3">
+            <UserPlus className="text-blue-600 mt-0.5 flex-shrink-0" size={20} />
+            <div className="flex-1">
+              <h3 className="font-semibold text-blue-900 mb-2">
+                Utenti da Registrare ({pendingUsers.length})
+              </h3>
+              <p className="text-sm text-blue-800 mb-3">
+                Questi utenti sono stati aggiunti ma devono ancora essere creati in Firebase Authentication.
+              </p>
+              <div className="space-y-2">
+                {pendingUsers.map((pending) => (
+                  <div
+                    key={pending.id}
+                    className="flex items-center justify-between bg-white rounded-lg p-3 border border-blue-200"
+                  >
+                    <div>
+                      <p className="font-medium text-gray-800">{pending.displayName}</p>
+                      <p className="text-sm text-gray-500">{pending.email}</p>
+                      <Badge className="mt-1" variant={pending.paymentType === 'mensile' ? 'default' : 'secondary'}>
+                        {pending.paymentType === 'mensile' ? 'Mensile' : 'Per Lezione'}
+                      </Badge>
+                    </div>
+                    <button
+                      onClick={() => handleDeletePending(pending.id)}
+                      className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-blue-200">
+                <p className="text-xs text-blue-700">
+                  💡 Per completare: Firebase Console → Authentication → Add User → Copia email da qui
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Barra di ricerca */}
       <div className="relative">
@@ -737,9 +808,15 @@ export default function AdminUsers() {
       >
         <form onSubmit={handleCreateUser} className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-            <p className="text-sm text-blue-800">
-              ℹ️ L'utente riceverà le credenziali via email e dovrà impostare la password al primo accesso.
+            <p className="text-sm text-blue-800 font-medium mb-1">
+              ℹ️ Come funziona:
             </p>
+            <ol className="text-xs text-blue-700 space-y-1 ml-4 list-decimal">
+              <li>Aggiungi qui email e nome dell'utente</li>
+              <li>Vai su Firebase Console → Authentication</li>
+              <li>Clicca "Add User" e crea l'account</li>
+              <li>L'utente può fare login con le credenziali che gli fornisci</li>
+            </ol>
           </div>
 
           <div>
