@@ -72,7 +72,7 @@ export default function AdminNonPaganti() {
       }))
     } catch (err) {
       console.error('Error toggling payment:', err)
-      alert('Errore durante laggiornamento del pagamento')
+      alert('Errore durante l\'aggiornamento del pagamento')
     }
   }
 
@@ -94,7 +94,7 @@ export default function AdminNonPaganti() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <p className="text-gray-500">Caricamento utenti...</p>
+        <div className="w-8 h-8 rounded-full border-2 border-brand-300 border-t-transparent animate-spin" />
       </div>
     )
   }
@@ -177,7 +177,7 @@ export default function AdminNonPaganti() {
 
       {loadingPayments ? (
         <div className="flex items-center justify-center py-12">
-          <p className="text-gray-500">Caricamento pagamenti...</p>
+          <div className="w-8 h-8 rounded-full border-2 border-brand-300 border-t-transparent animate-spin" />
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -282,7 +282,6 @@ export default function AdminNonPaganti() {
                   { locale: it }
                 )
                 
-                // Questo è semplificato - in produzione dovresti caricare i dati per ogni mese
                 const isCurrentMonth = month === selectedMonth
                 const paid = isCurrentMonth ? pagantiForMonth.length : 0
                 const notPaid = isCurrentMonth ? nonPagantiForMonth.length : 0

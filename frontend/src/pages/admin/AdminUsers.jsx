@@ -9,10 +9,8 @@ import {
   setMonthlyPaymentStatus,
   getMonthlyPayments,
   deleteUserProfile,
-  createUserProfile,
+  createUserProfileOnly,
 } from '../../lib/firestore'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { auth } from '../../lib/firebase'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -48,7 +46,6 @@ export default function AdminUsers() {
   const [showCreateUser, setShowCreateUser] = useState(false)
   const [newUserData, setNewUserData] = useState({
     email: '',
-    password: '',
     displayName: '',
     paymentType: 'mensile',
   })
@@ -206,26 +203,16 @@ export default function AdminUsers() {
 
   async function handleCreateUser(e) {
     e.preventDefault()
-    if (!newUserData.email || !newUserData.password || !newUserData.displayName) {
+    if (!newUserData.email || !newUserData.displayName) {
       alert('Compila tutti i campi obbligatori')
-      return
-    }
-    if (newUserData.password.length < 6) {
-      alert('La password deve essere di almeno 6 caratteri')
       return
     }
 
     setCreating(true)
     try {
-      // Crea l'account Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        newUserData.email,
-        newUserData.password
-      )
-      
-      // Crea il profilo utente in Firestore
-      await createUserProfile(userCredential.user.uid, {
+      // Crea solo il profilo utente in Firestore
+      // L'utente imposterà la password al primo login
+      await createUserProfileOnly({
         email: newUserData.email,
         displayName: newUserData.displayName,
         paymentType: newUserData.paymentType,
@@ -239,22 +226,13 @@ export default function AdminUsers() {
       setShowCreateUser(false)
       setNewUserData({
         email: '',
-        password: '',
         displayName: '',
         paymentType: 'mensile',
       })
-      alert('Utente creato con successo!')
+      alert('Utente creato! L\'utente dovrà impostare la password al primo accesso.')
     } catch (err) {
       console.error('Error creating user:', err)
-      if (err.code === 'auth/email-already-in-use') {
-        alert('Questa email è già in uso')
-      } else if (err.code === 'auth/invalid-email') {
-        alert('Email non valida')
-      } else if (err.code === 'auth/weak-password') {
-        alert('Password troppo debole')
-      } else {
-        alert('Errore durante la creazione dell\'utente: ' + err.message)
-      }
+      alert('Errore durante la creazione dell\'utente: ' + err.message)
     } finally {
       setCreating(false)
     }
@@ -374,7 +352,7 @@ export default function AdminUsers() {
       )}
 
       {/* Header e bottone nuovo utente */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Utenti</h2>
           <p className="text-sm text-gray-500">{filteredUsers.length} utenti totali</p>
@@ -758,6 +736,12 @@ export default function AdminUsers() {
         title="Crea Nuovo Utente"
       >
         <form onSubmit={handleCreateUser} className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <p className="text-sm text-blue-800">
+              ℹ️ L'utente riceverà le credenziali via email e dovrà impostare la password al primo accesso.
+            </p>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Nome Completo *
@@ -782,21 +766,6 @@ export default function AdminUsers() {
               placeholder="mario.rossi@email.com"
               required
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Password *
-            </label>
-            <Input
-              type="password"
-              value={newUserData.password}
-              onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
-              placeholder="Minimo 6 caratteri"
-              minLength={6}
-              required
-            />
-            <p className="text-xs text-gray-500 mt-1">Minimo 6 caratteri</p>
           </div>
 
           <div>

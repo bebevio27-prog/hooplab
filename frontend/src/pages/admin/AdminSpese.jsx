@@ -28,6 +28,7 @@ export default function AdminSpese() {
   const [showModal, setShowModal] = useState(false)
   const [editingSpesa, setEditingSpesa] = useState(null)
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
+  const [saving, setSaving] = useState(false)
   
   const [formData, setFormData] = useState({
     type: 'affitto',
@@ -47,6 +48,7 @@ export default function AdminSpese() {
       setSpese(data)
     } catch (err) {
       console.error('Error loading spese:', err)
+      alert('Errore nel caricamento delle spese')
     } finally {
       setLoading(false)
     }
@@ -81,6 +83,7 @@ export default function AdminSpese() {
       return
     }
 
+    setSaving(true)
     try {
       const data = {
         type: formData.type,
@@ -100,6 +103,8 @@ export default function AdminSpese() {
     } catch (err) {
       console.error('Error saving spesa:', err)
       alert('Errore durante il salvataggio')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -146,7 +151,7 @@ export default function AdminSpese() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <p className="text-gray-500">Caricamento spese...</p>
+        <div className="w-8 h-8 rounded-full border-2 border-brand-300 border-t-transparent animate-spin" />
       </div>
     )
   }
@@ -369,11 +374,11 @@ export default function AdminSpese() {
           </div>
 
           <div className="flex gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>
+            <Button type="button" variant="secondary" onClick={() => setShowModal(false)} disabled={saving}>
               Annulla
             </Button>
-            <Button type="submit" className="flex-1">
-              {editingSpesa ? 'Salva Modifiche' : 'Aggiungi Spesa'}
+            <Button type="submit" className="flex-1" disabled={saving}>
+              {saving ? 'Salvataggio...' : editingSpesa ? 'Salva Modifiche' : 'Aggiungi Spesa'}
             </Button>
           </div>
         </form>

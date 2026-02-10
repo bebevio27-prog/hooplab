@@ -248,3 +248,18 @@ export async function getSpeseFisseByMonth(yearMonth) {
   )
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
+
+// ─── Creazione Utenti (solo profilo, password al primo login) ───
+
+export async function createUserProfileOnly(data) {
+  // Genera un ID casuale per l'utente
+  const userId = doc(collection(db, 'users')).id
+  
+  await setDoc(doc(db, 'users', userId), {
+    ...data,
+    accountSetup: false, // Flag per sapere se l'utente ha impostato la password
+    createdAt: serverTimestamp(),
+  })
+  
+  return userId
+}
