@@ -184,14 +184,67 @@ export default function AdminUsers() {
     }
   }
 
-  async function handleAddUser(e) {
-    e.preventDefault()
-    
-    if (!newUserForm.displayName.trim() || !newUserForm.email.trim()) {
-      alert('Nome e email sono obbligatori')
-      return
-    }
+async function handleAddUser(e) {
+  e.preventDefault()
 
+  if (!newUserForm.displayName.trim() || !newUserForm.email.trim()) {
+    alert('Nome e email sono obbligatori')
+    return
+  }
+
+  setAddingUser(true)
+  try {
+    // Genera una password provvisoria (es. random)
+    const tempPassword = Math.random().toString(36).slice(-8)
+
+    // 1) Crea l'utente in Firebase Auth
+    const cred = await createUserWithEmailAndPassword(
+      auth,
+      newUserForm.email.trim().toLowerCase(),
+      tempPassword
+    )
+
+    // 2) Aggiorna displayName
+    await updateProfile(cred.user, {
+      displayName: newUserForm.displayName.trim()
+    })
+
+    // 3) Crea il documento Firestore come ora
+    const userId = cred.user.uid
+    const userData = {
+      displayName: newUserForm.displayName.trim(),
+      email: newUserForm.email.trim().toLowerCase(),
+      paymentType: newUserForm.paymentType,
+      lessonsPaid: newUserForm.paymentType === 'per-lesson'
+        ? parseInt(newUserForm.lessonsPaid) || 0
+        : 0,
+      notes: newUserForm.notes.trim(),
+      isManuallyAdded: true,
+      createdAt: serverTimestamp()
+    }
+    await createUserProfile(userId, userData)
+
+    // aggiungi allo store
+    addUserToStore({ id: userId, ...userData })
+
+    // Rimuovi form
+    setNewUserForm({
+      displayName: '',
+      email: '',
+      paymentType: 'mensile',
+      lessonsPaid: 0,
+      notes: ''
+    })
+    setShowAddUser(false)
+
+    alert(`Utente creato! Password provvisoria: ${tempPassword}`)
+  } catch (err) {
+    console.error('Error adding user:', err)
+    alert('Errore durante l\'aggiunta dell\'utente')
+  } finally {
+    setAddingUser(false)
+  }
+}
     setAddingUser(true)
     try {
       // Generate a unique ID
