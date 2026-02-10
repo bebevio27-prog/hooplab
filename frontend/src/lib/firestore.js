@@ -160,6 +160,28 @@ export async function updateUserProfile(userId, data) {
   return updateDoc(doc(db, 'users', userId), data)
 }
 
+export async function createUserProfile(userId, data) {
+  return setDoc(doc(db, 'users', userId), {
+    ...data,
+    createdAt: serverTimestamp(),
+  })
+}
+
+export async function deleteUserProfile(userId) {
+  // Delete user document
+  await deleteDoc(doc(db, 'users', userId))
+  
+  // Delete all user's prenotazioni
+  const prenotazioniSnap = await getDocs(
+    query(collection(db, 'prenotazioni'), where('userId', '==', userId))
+  )
+  await Promise.all(prenotazioniSnap.docs.map(d => deleteDoc(d.ref)))
+  
+  // Delete all user's payments
+  const paymentsSnap = await getDocs(collection(db, 'users', userId, 'payments'))
+  await Promise.all(paymentsSnap.docs.map(d => deleteDoc(d.ref)))
+}
+
 // ─── Pagamenti ───────────────────────────────────────────
 
 /**
