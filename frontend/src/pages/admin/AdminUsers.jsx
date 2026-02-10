@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronRight, ChevronDown, StickyNote, Check, X, Minus, Plus, AlertCircle, Trash2 } from 'lucide-react'
+import { Search, ChevronRight, ChevronDown, StickyNote, Check, X, Minus, Plus, AlertCircle, Trash2, UserPlus } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useAppStore } from '../../stores/appStore'
 import { format, subMonths } from 'date-fns'
@@ -9,7 +9,10 @@ import {
   setMonthlyPaymentStatus,
   getMonthlyPayments,
   deleteUserProfile,
+  createUserProfile,
 } from '../../lib/firestore'
+import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { auth } from '../../lib/firebase'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -41,6 +44,15 @@ export default function AdminUsers() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [userToDelete, setUserToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
+
+  const [showCreateUser, setShowCreateUser] = useState(false)
+  const [newUserData, setNewUserData] = useState({
+    email: '',
+    password: '',
+    displayName: '',
+    paymentType: 'mensile',
+  })
+  const [creating, setCreating] = useState(false)
 
   const currentYearMonth = format(new Date(), 'yyyy-MM')
 
@@ -192,6 +204,62 @@ export default function AdminUsers() {
     }
   }
 
+  async function handleCreateUser(e) {
+    e.preventDefault()
+    if (!newUserData.email || !newUserData.password || !newUserData.displayName) {
+      alert('Compila tutti i campi obbligatori')
+      return
+    }
+    if (newUserData.password.length < 6) {
+      alert('La password deve essere di almeno 6 caratteri')
+      return
+    }
+
+    setCreating(true)
+    try {
+      // Crea l'account Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        newUserData.email,
+        newUserData.password
+      )
+      
+      // Crea il profilo utente in Firestore
+      await createUserProfile(userCredential.user.uid, {
+        email: newUserData.email,
+        displayName: newUserData.displayName,
+        paymentType: newUserData.paymentType,
+        role: 'user',
+        lessonsPaid: 0,
+      })
+
+      // Ricarica la lista utenti
+      await loadUsers()
+      
+      setShowCreateUser(false)
+      setNewUserData({
+        email: '',
+        password: '',
+        displayName: '',
+        paymentType: 'mensile',
+      })
+      alert('Utente creato con successo!')
+    } catch (err) {
+      console.error('Error creating user:', err)
+      if (err.code === 'auth/email-already-in-use') {
+        alert('Questa email è già in uso')
+      } else if (err.code === 'auth/invalid-email') {
+        alert('Email non valida')
+      } else if (err.code === 'auth/weak-password') {
+        alert('Password troppo debole')
+      } else {
+        alert('Errore durante la creazione dell\'utente: ' + err.message)
+      }
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const filteredUsers = users
     .filter((u) => u.id !== currentUser?.uid)
     .filter(
@@ -304,6 +372,18 @@ export default function AdminUsers() {
           </div>
         </Card>
       )}
+
+      {/* Header e bottone nuovo utente */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Utenti</h2>
+          <p className="text-sm text-gray-500">{filteredUsers.length} utenti totali</p>
+        </div>
+        <Button onClick={() => setShowCreateUser(true)}>
+          <UserPlus size={16} />
+          Nuovo Utente
+        </Button>
+      </div>
 
       {/* Barra di ricerca */}
       <div className="relative">
@@ -669,6 +749,84 @@ export default function AdminUsers() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal Creazione Nuovo Utente */}
+      <Modal
+        isOpen={showCreateUser}
+        onClose={() => setShowCreateUser(false)}
+        title="Crea Nuovo Utente"
+      >
+        <form onSubmit={handleCreateUser} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nome Completo *
+            </label>
+            <Input
+              type="text"
+              value={newUserData.displayName}
+              onChange={(e) => setNewUserData({ ...newUserData, displayName: e.target.value })}
+              placeholder="Mario Rossi"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email *
+            </label>
+            <Input
+              type="email"
+              value={newUserData.email}
+              onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
+              placeholder="mario.rossi@email.com"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Password *
+            </label>
+            <Input
+              type="password"
+              value={newUserData.password}
+              onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
+              placeholder="Minimo 6 caratteri"
+              minLength={6}
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">Minimo 6 caratteri</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tipo di Pagamento
+            </label>
+            <select
+              value={newUserData.paymentType}
+              onChange={(e) => setNewUserData({ ...newUserData, paymentType: e.target.value })}
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
+            >
+              <option value="mensile">Mensile</option>
+              <option value="per-lesson">Per Lezione</option>
+            </select>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowCreateUser(false)}
+              disabled={creating}
+            >
+              Annulla
+            </Button>
+            <Button type="submit" className="flex-1" disabled={creating}>
+              {creating ? 'Creazione...' : 'Crea Utente'}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   )

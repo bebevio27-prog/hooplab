@@ -208,3 +208,43 @@ export async function getMonthlyPayments(userId) {
 export async function updatePerLessonCounts(userId, lessonsAttended, lessonsPaid) {
   return updateDoc(doc(db, 'users', userId), { lessonsAttended, lessonsPaid })
 }
+
+// ─── Spese Fisse ─────────────────────────────────────────
+
+/**
+ * Spesa Fissa shape:
+ * {
+ *   type: 'affitto' | 'bolletta_luce' | 'bolletta_acqua' | 'bolletta_gas' | 'altro',
+ *   amount: number,
+ *   yearMonth: 'YYYY-MM',
+ *   description: string,
+ *   createdAt: Timestamp,
+ * }
+ */
+
+export async function createSpesaFissa(data) {
+  return addDoc(collection(db, 'speseFisse'), {
+    ...data,
+    createdAt: serverTimestamp(),
+  })
+}
+
+export async function updateSpesaFissa(spesaId, data) {
+  return updateDoc(doc(db, 'speseFisse', spesaId), data)
+}
+
+export async function deleteSpesaFissa(spesaId) {
+  return deleteDoc(doc(db, 'speseFisse', spesaId))
+}
+
+export async function getSpeseFisse() {
+  const snap = await getDocs(query(collection(db, 'speseFisse'), orderBy('yearMonth', 'desc')))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export async function getSpeseFisseByMonth(yearMonth) {
+  const snap = await getDocs(
+    query(collection(db, 'speseFisse'), where('yearMonth', '==', yearMonth))
+  )
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}

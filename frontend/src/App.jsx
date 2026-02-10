@@ -9,6 +9,8 @@ import AdminPage from './pages/admin/AdminPage'
 import AdminCorsi from './pages/admin/AdminCorsi'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminBookings from './pages/admin/AdminBookings'
+import AdminSpese from './pages/admin/AdminSpese'
+import AdminNonPaganti from './pages/admin/AdminNonPaganti'
 
 function BookingsRouter() {
   const { isAdmin } = useAuth()
@@ -102,6 +104,8 @@ function App() {
           >
             <Route index element={<AdminUsers />} />
             <Route path="corsi" element={<AdminCorsi />} />
+            <Route path="spese" element={<AdminSpese />} />
+            <Route path="non-paganti" element={<AdminNonPaganti />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
