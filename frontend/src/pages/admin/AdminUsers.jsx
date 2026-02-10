@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronRight, ChevronDown, StickyNote, Check, X, Minus, Plus } from 'lucide-react'
+import { Search, ChevronRight, ChevronDown, StickyNote, Check, X, Minus, Plus, UserPlus, AlertCircle, Trash2 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useAppStore } from '../../stores/appStore'
 import { format, subMonths } from 'date-fns'
@@ -8,6 +8,8 @@ import {
   updateUserProfile,
   setMonthlyPaymentStatus,
   getMonthlyPayments,
+  createUserProfile,
+  deleteUserProfile,
 } from '../../lib/firestore'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -18,7 +20,18 @@ import { cn } from '../../lib/utils'
 
 export default function AdminUsers() {
   const { currentUser } = useAuth()
-  const { users, usersLoaded, loadUsers, updateUserInStore, currentMonthPaidMap, setCurrentMonthPaid, setCurrentMonthPaidMap: setMonthPaidMap } = useAppStore()
+  const { 
+    users, 
+    usersLoaded, 
+    loadUsers, 
+    updateUserInStore, 
+    addUserToStore,
+    removeUserFromStore,
+    currentMonthPaidMap, 
+    setCurrentMonthPaid, 
+    setCurrentMonthPaidMap: setMonthPaidMap 
+  } = useAppStore()
+  
   const [loading, setLoading] = useState(!usersLoaded)
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState(null)
@@ -26,6 +39,22 @@ export default function AdminUsers() {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  
+  // New user form state
+  const [showAddUser, setShowAddUser] = useState(false)
+  const [newUserForm, setNewUserForm] = useState({
+    displayName: '',
+    email: '',
+    paymentType: 'mensile',
+    lessonsPaid: 0,
+    notes: ''
+  })
+  const [addingUser, setAddingUser] = useState(false)
+
+  // Delete confirmation
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [userToDelete, setUserToDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   const currentYearMonth = format(new Date(), 'yyyy-MM')
 
@@ -155,6 +184,84 @@ export default function AdminUsers() {
     }
   }
 
+  async function handleAddUser(e) {
+    e.preventDefault()
+    
+    if (!newUserForm.displayName.trim() || !newUserForm.email.trim()) {
+      alert('Nome e email sono obbligatori')
+      return
+    }
+
+    setAddingUser(true)
+    try {
+      // Generate a unique ID
+      const userId = `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      
+      const userData = {
+        displayName: newUserForm.displayName.trim(),
+        email: newUserForm.email.trim().toLowerCase(),
+        paymentType: newUserForm.paymentType,
+        lessonsPaid: newUserForm.paymentType === 'per-lesson' ? parseInt(newUserForm.lessonsPaid) || 0 : 0,
+        notes: newUserForm.notes.trim(),
+        isManuallyAdded: true,
+      }
+
+      await createUserProfile(userId, userData)
+      
+      // Add to store
+      addUserToStore({ id: userId, ...userData })
+      
+      // If mensile, initialize current month as unpaid
+      if (userData.paymentType === 'mensile') {
+        setCurrentMonthPaid(userId, false)
+      }
+
+      // Reset form
+      setNewUserForm({
+        displayName: '',
+        email: '',
+        paymentType: 'mensile',
+        lessonsPaid: 0,
+        notes: ''
+      })
+      setShowAddUser(false)
+      
+      alert('Utente aggiunto con successo!')
+    } catch (err) {
+      console.error('Error adding user:', err)
+      alert('Errore durante l\'aggiunta dell\'utente')
+    } finally {
+      setAddingUser(false)
+    }
+  }
+
+  function confirmDeleteUser(user) {
+    setUserToDelete(user)
+    setShowDeleteConfirm(true)
+  }
+
+  async function handleDeleteUser() {
+    if (!userToDelete) return
+    
+    setDeleting(true)
+    try {
+      await deleteUserProfile(userToDelete.id)
+      removeUserFromStore(userToDelete.id)
+      
+      // Close modals
+      setShowDeleteConfirm(false)
+      setSelectedUser(null)
+      setUserToDelete(null)
+      
+      alert('Utente eliminato con successo')
+    } catch (err) {
+      console.error('Error deleting user:', err)
+      alert('Errore durante l\'eliminazione dell\'utente')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const filteredUsers = users
     .filter((u) => u.id !== currentUser?.uid)
     .filter(
@@ -176,6 +283,26 @@ export default function AdminUsers() {
       return aOk === bOk ? 0 : aOk ? 1 : -1
     })
 
+  // Calculate unpaid summary
+  const unpaidSummary = users
+    .filter((u) => u.id !== currentUser?.uid)
+    .reduce((acc, user) => {
+      if (user.paymentType === 'mensile') {
+        const isPaid = currentMonthPaidMap[user.id] || false
+        if (!isPaid) {
+          acc.mensileUnpaid.push(user)
+        }
+      } else if (user.paymentType === 'per-lesson') {
+        const booked = getUserBookingsCount(user.id)
+        const paid = user.lessonsPaid || 0
+        const delta = booked - paid
+        if (delta > 0) {
+          acc.perLessonUnpaid.push({ user, delta })
+        }
+      }
+      return acc
+    }, { mensileUnpaid: [], perLessonUnpaid: [] })
+
   // Generate last 6 months for monthly payment view
   const recentMonths = Array.from({ length: 6 }, (_, i) => {
     const d = subMonths(new Date(), i)
@@ -196,70 +323,334 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-4">
-      {/* Search */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Cerca utente..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent"
-        />
+      {/* Summary of unpaid users */}
+      {(unpaidSummary.mensileUnpaid.length > 0 || unpaidSummary.perLessonUnpaid.length > 0) && (
+        <Card className="bg-amber-50 border-amber-200">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="text-amber-600 mt-0.5 flex-shrink-0" size={20} />
+            <div className="flex-1 space-y-3">
+              <h3 className="font-semibold text-amber-900">Pagamenti in sospeso</h3>
+              
+              {unpaidSummary.mensileUnpaid.length > 0 && (
+                <div>
+                  <p className="text-sm text-amber-800 font-medium mb-2">
+                    Mensili non pagati ({unpaidSummary.mensileUnpaid.length}):
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {unpaidSummary.mensileUnpaid.map(user => (
+                      <Badge 
+                        key={user.id} 
+                        variant="warning"
+                        className="cursor-pointer hover:bg-amber-200"
+                        onClick={() => openUserDetail(user)}
+                      >
+                        {user.displayName || user.email}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {unpaidSummary.perLessonUnpaid.length > 0 && (
+                <div>
+                  <p className="text-sm text-amber-800 font-medium mb-2">
+                    A lezione con saldo negativo ({unpaidSummary.perLessonUnpaid.length}):
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {unpaidSummary.perLessonUnpaid.map(({ user, delta }) => (
+                      <Badge 
+                        key={user.id} 
+                        variant="warning"
+                        className="cursor-pointer hover:bg-amber-200"
+                        onClick={() => openUserDetail(user)}
+                      >
+                        {user.displayName || user.email} (-{delta})
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Header with search and add button */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <Input
+            type="text"
+            placeholder="Cerca utente..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <Button onClick={() => setShowAddUser(true)} className="whitespace-nowrap">
+          <UserPlus size={18} />
+          Aggiungi utente
+        </Button>
       </div>
 
       {/* Users list */}
       {filteredUsers.length === 0 ? (
-        <Card className="text-center py-8">
-          <p className="text-sm text-gray-500">Nessun utente trovato</p>
+        <Card className="text-center py-8 text-gray-400">
+          Nessun utente trovato
         </Card>
       ) : (
-        filteredUsers.map((user) => {
-          const isPerLesson = user.paymentType === 'per-lesson'
-          const delta = isPerLesson
-            ? getUserBookingsCount(user.id) - (user.lessonsPaid || 0)
-            : 0
-          const isMensile = user.paymentType === 'mensile'
-          const mensileOk = isMensile ? (currentMonthPaidMap[user.id] || false) : true
-          const isOk = isPerLesson ? delta <= 0 : mensileOk
+        <div className="space-y-2">
+          {filteredUsers.map((user) => {
+            const isOk =
+              user.paymentType === 'per-lesson'
+                ? getUserBookingsCount(user.id) - (user.lessonsPaid || 0) <= 0
+                : user.paymentType === 'mensile'
+                  ? (currentMonthPaidMap[user.id] || false)
+                  : true
 
-          return (
-            <Card
-              key={user.id}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.99] border-l-4',
-                isOk ? 'border-l-emerald-400' : 'border-l-amber-400'
-              )}
-              onClick={() => openUserDetail(user)}
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800 truncate">
-                  {user.displayName || user.email || 'Senza nome'}
-                </p>
-              </div>
-              <Badge variant={isMensile ? 'brand' : 'default'}>
-                {isMensile ? 'Mensile' : 'Per lezione'}
-              </Badge>
-              {isPerLesson && delta > 0 && (
-                <span className="text-xs font-bold text-amber-600">-{delta}</span>
-              )}
-              {isMensile && !mensileOk && (
-                <span className="text-xs font-bold text-amber-600">!</span>
-              )}
-              <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
-            </Card>
-          )
-        })
+            return (
+              <Card
+                key={user.id}
+                className={cn(
+                  'p-4 transition-all hover:shadow-md cursor-pointer',
+                  !isOk && 'bg-amber-50 border-amber-200'
+                )}
+                onClick={() => openUserDetail(user)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        'w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold',
+                        isOk
+                          ? 'bg-emerald-100 text-emerald-600'
+                          : 'bg-amber-100 text-amber-600'
+                      )}
+                    >
+                      {(user.displayName || user.email || '?')[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {user.displayName || 'Nessun nome'}
+                      </p>
+                      <p className="text-xs text-gray-500">{user.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant={user.paymentType === 'mensile' ? 'primary' : 'secondary'}>
+                      {user.paymentType === 'mensile' ? 'Mensile' : 'A lezione'}
+                    </Badge>
+                    <ChevronRight className="text-gray-400" size={18} />
+                  </div>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
       )}
 
-      {/* User detail modal */}
+      {/* Add User Modal */}
       <Modal
-        open={!!selectedUser}
+        isOpen={showAddUser}
+        onClose={() => !addingUser && setShowAddUser(false)}
+        title="Aggiungi nuovo utente"
+      >
+        <form onSubmit={handleAddUser} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nome completo *
+            </label>
+            <Input
+              type="text"
+              value={newUserForm.displayName}
+              onChange={(e) => setNewUserForm(prev => ({ ...prev, displayName: e.target.value }))}
+              placeholder="Mario Rossi"
+              required
+              disabled={addingUser}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email *
+            </label>
+            <Input
+              type="email"
+              value={newUserForm.email}
+              onChange={(e) => setNewUserForm(prev => ({ ...prev, email: e.target.value }))}
+              placeholder="mario.rossi@email.com"
+              required
+              disabled={addingUser}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Tipo di pagamento
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setNewUserForm(prev => ({ ...prev, paymentType: 'mensile' }))}
+                disabled={addingUser}
+                className={cn(
+                  'flex-1 py-2 rounded-xl text-sm font-medium transition-all border',
+                  newUserForm.paymentType === 'mensile'
+                    ? 'bg-brand-50 border-brand-200 text-brand-700'
+                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                )}
+              >
+                Mensile
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewUserForm(prev => ({ ...prev, paymentType: 'per-lesson' }))}
+                disabled={addingUser}
+                className={cn(
+                  'flex-1 py-2 rounded-xl text-sm font-medium transition-all border',
+                  newUserForm.paymentType === 'per-lesson'
+                    ? 'bg-brand-50 border-brand-200 text-brand-700'
+                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                )}
+              >
+                Per lezione
+              </button>
+            </div>
+          </div>
+
+          {newUserForm.paymentType === 'per-lesson' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Lezioni già pagate
+              </label>
+              <Input
+                type="number"
+                min="0"
+                value={newUserForm.lessonsPaid}
+                onChange={(e) => setNewUserForm(prev => ({ ...prev, lessonsPaid: e.target.value }))}
+                disabled={addingUser}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Note (opzionale)
+            </label>
+            <textarea
+              value={newUserForm.notes}
+              onChange={(e) => setNewUserForm(prev => ({ ...prev, notes: e.target.value }))}
+              placeholder="Note sull'utente..."
+              rows={3}
+              disabled={addingUser}
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent resize-none disabled:opacity-50"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowAddUser(false)}
+              disabled={addingUser}
+              className="flex-1"
+            >
+              Annulla
+            </Button>
+            <Button
+              type="submit"
+              disabled={addingUser}
+              className="flex-1"
+            >
+              {addingUser ? 'Aggiunta...' : 'Aggiungi utente'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => !deleting && setShowDeleteConfirm(false)}
+        title="Conferma eliminazione"
+      >
+        <div className="space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="text-red-600 mt-0.5 flex-shrink-0" size={20} />
+              <div className="flex-1">
+                <p className="text-sm text-red-900 font-medium mb-2">
+                  Stai per eliminare l'utente:
+                </p>
+                <p className="text-sm text-red-800">
+                  <strong>{userToDelete?.displayName || 'Nessun nome'}</strong>
+                  <br />
+                  {userToDelete?.email}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-sm text-gray-600">
+            Questa azione eliminerà permanentemente:
+          </p>
+          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1 ml-2">
+            <li>Il profilo dell'utente</li>
+            <li>Tutte le sue prenotazioni</li>
+            <li>Lo storico dei pagamenti</li>
+          </ul>
+
+          <p className="text-sm font-medium text-red-600">
+            Questa azione non può essere annullata!
+          </p>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={deleting}
+              className="flex-1"
+            >
+              Annulla
+            </Button>
+            <Button
+              onClick={handleDeleteUser}
+              disabled={deleting}
+              className="flex-1 bg-red-600 hover:bg-red-700"
+            >
+              {deleting ? 'Eliminazione...' : 'Elimina definitivamente'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* User Detail Modal */}
+      <Modal
+        isOpen={!!selectedUser}
         onClose={() => setSelectedUser(null)}
         title={selectedUser?.displayName || selectedUser?.email || 'Utente'}
       >
         {selectedUser && (
-          <div className="space-y-5">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span>{selectedUser.email}</span>
+                {selectedUser.isManuallyAdded && (
+                  <Badge variant="secondary" className="text-xs">Aggiunto manualmente</Badge>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  confirmDeleteUser(selectedUser)
+                }}
+                className="text-red-500 hover:text-red-700 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                title="Elimina utente"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+
             {/* Payment type selector */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
