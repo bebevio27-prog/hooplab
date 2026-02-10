@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronRight, ChevronDown, StickyNote, Check, X, Minus, Plus, UserPlus, AlertCircle, Trash2 } from 'lucide-react'
+import { Search, ChevronRight, ChevronDown, StickyNote, Check, X, Minus, Plus, AlertCircle, Trash2 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useAppStore } from '../../stores/appStore'
 import { format, subMonths } from 'date-fns'
@@ -8,7 +8,6 @@ import {
   updateUserProfile,
   setMonthlyPaymentStatus,
   getMonthlyPayments,
-  createUserProfile,
   deleteUserProfile,
 } from '../../lib/firestore'
 import Card from '../../components/ui/Card'
@@ -25,7 +24,6 @@ export default function AdminUsers() {
     usersLoaded, 
     loadUsers, 
     updateUserInStore, 
-    addUserToStore,
     removeUserFromStore,
     currentMonthPaidMap, 
     setCurrentMonthPaid, 
@@ -39,17 +37,6 @@ export default function AdminUsers() {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
-  
-  // New user form state
-  const [showAddUser, setShowAddUser] = useState(false)
-  const [newUserForm, setNewUserForm] = useState({
-    displayName: '',
-    email: '',
-    paymentType: 'mensile',
-    lessonsPaid: 0,
-    notes: ''
-  })
-  const [addingUser, setAddingUser] = useState(false)
 
   // Delete confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -181,110 +168,6 @@ export default function AdminUsers() {
       console.error('Error saving notes:', err)
     } finally {
       setSaving(false)
-    }
-  }
-
-/*async function handleAddUser(e) {
-  e.preventDefault()
-
-  if (!newUserForm.displayName.trim() || !newUserForm.email.trim()) {
-    alert('Nome e email sono obbligatori')
-    return
-  }
-
-  setAddingUser(true)
-  try {
-    // Genera una password provvisoria (es. random)
-    const tempPassword = Math.random().toString(36).slice(-8)
-
-    // 1) Crea l'utente in Firebase Auth
-    const cred = await createUserWithEmailAndPassword(
-      auth,
-      newUserForm.email.trim().toLowerCase(),
-      tempPassword
-    )
-
-    // 2) Aggiorna displayName
-    await updateProfile(cred.user, {
-      displayName: newUserForm.displayName.trim()
-    })
-
-    // 3) Crea il documento Firestore come ora
-    const userId = cred.user.uid
-    const userData = {
-      displayName: newUserForm.displayName.trim(),
-      email: newUserForm.email.trim().toLowerCase(),
-      paymentType: newUserForm.paymentType,
-      lessonsPaid: newUserForm.paymentType === 'per-lesson'
-        ? parseInt(newUserForm.lessonsPaid) || 0
-        : 0,
-      notes: newUserForm.notes.trim(),
-      isManuallyAdded: true,
-      createdAt: serverTimestamp()
-    }
-    await createUserProfile(userId, userData)
-
-    // aggiungi allo store
-    addUserToStore({ id: userId, ...userData })
-
-    // Rimuovi form
-    setNewUserForm({
-      displayName: '',
-      email: '',
-      paymentType: 'mensile',
-      lessonsPaid: 0,
-      notes: ''
-    })
-    setShowAddUser(false)
-
-    alert(`Utente creato! Password provvisoria: ${tempPassword}`)
-  } catch (err) {
-    console.error('Error adding user:', err)
-    alert('Errore durante l\'aggiunta dell\'utente')
-  } finally {
-    setAddingUser(false)
-  }
-}*/
-    setAddingUser(true)
-    try {
-      // Generate a unique ID
-      const userId = `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      
-      const userData = {
-        displayName: newUserForm.displayName.trim(),
-        email: newUserForm.email.trim().toLowerCase(),
-        paymentType: newUserForm.paymentType,
-        lessonsPaid: newUserForm.paymentType === 'per-lesson' ? parseInt(newUserForm.lessonsPaid) || 0 : 0,
-        notes: newUserForm.notes.trim(),
-        isManuallyAdded: true,
-      }
-
-      await createUserProfile(userId, userData)
-      
-      // Add to store
-      addUserToStore({ id: userId, ...userData })
-      
-      // If mensile, initialize current month as unpaid
-      if (userData.paymentType === 'mensile') {
-        setCurrentMonthPaid(userId, false)
-      }
-
-      // Reset form
-      setNewUserForm({
-        displayName: '',
-        email: '',
-        paymentType: 'mensile',
-        lessonsPaid: 0,
-        notes: ''
-      })
-      setShowAddUser(false)
-      
-      alert('Utente aggiunto con successo!')
-    } catch (err) {
-      console.error('Error adding user:', err)
-      alert('Errore durante l\'aggiunta dell\'utente')
-    } finally {
-      setAddingUser(false)
     }
   }
 
@@ -428,7 +311,7 @@ export default function AdminUsers() {
         </Card>
       )}
 
-      {/* Header with search and add button */}
+      {/* Search bar */}
       <div className="flex items-center gap-3">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -497,125 +380,6 @@ export default function AdminUsers() {
           })}
         </div>
       )}
-
-      {/* Add User Modal */}
-      <Modal
-        isOpen={showAddUser}
-        onClose={() => !addingUser && setShowAddUser(false)}
-        title="Aggiungi nuovo utente"
-      >
-        <form onSubmit={handleAddUser} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nome completo *
-            </label>
-            <Input
-              type="text"
-              value={newUserForm.displayName}
-              onChange={(e) => setNewUserForm(prev => ({ ...prev, displayName: e.target.value }))}
-              placeholder="Mario Rossi"
-              required
-              disabled={addingUser}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email *
-            </label>
-            <Input
-              type="email"
-              value={newUserForm.email}
-              onChange={(e) => setNewUserForm(prev => ({ ...prev, email: e.target.value }))}
-              placeholder="mario.rossi@email.com"
-              required
-              disabled={addingUser}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Tipo di pagamento
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setNewUserForm(prev => ({ ...prev, paymentType: 'mensile' }))}
-                disabled={addingUser}
-                className={cn(
-                  'flex-1 py-2 rounded-xl text-sm font-medium transition-all border',
-                  newUserForm.paymentType === 'mensile'
-                    ? 'bg-brand-50 border-brand-200 text-brand-700'
-                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                )}
-              >
-                Mensile
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewUserForm(prev => ({ ...prev, paymentType: 'per-lesson' }))}
-                disabled={addingUser}
-                className={cn(
-                  'flex-1 py-2 rounded-xl text-sm font-medium transition-all border',
-                  newUserForm.paymentType === 'per-lesson'
-                    ? 'bg-brand-50 border-brand-200 text-brand-700'
-                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                )}
-              >
-                Per lezione
-              </button>
-            </div>
-          </div>
-
-          {newUserForm.paymentType === 'per-lesson' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Lezioni già pagate
-              </label>
-              <Input
-                type="number"
-                min="0"
-                value={newUserForm.lessonsPaid}
-                onChange={(e) => setNewUserForm(prev => ({ ...prev, lessonsPaid: e.target.value }))}
-                disabled={addingUser}
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Note (opzionale)
-            </label>
-            <textarea
-              value={newUserForm.notes}
-              onChange={(e) => setNewUserForm(prev => ({ ...prev, notes: e.target.value }))}
-              placeholder="Note sull'utente..."
-              rows={3}
-              disabled={addingUser}
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent resize-none disabled:opacity-50"
-            />
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setShowAddUser(false)}
-              disabled={addingUser}
-              className="flex-1"
-            >
-              Annulla
-            </Button>
-            <Button
-              type="submit"
-              disabled={addingUser}
-              className="flex-1"
-            >
-              {addingUser ? 'Aggiunta...' : 'Aggiungi utente'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       {/* Delete Confirmation Modal */}
       <Modal
@@ -690,9 +454,7 @@ export default function AdminUsers() {
                 )}
               </div>
               <button
-                onClick={() => {
-                  confirmDeleteUser(selectedUser)
-                }}
+                onClick={() => confirmDeleteUser(selectedUser)}
                 className="text-red-500 hover:text-red-700 transition-colors p-2 hover:bg-red-50 rounded-lg"
                 title="Elimina utente"
               >
