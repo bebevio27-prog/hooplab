@@ -184,7 +184,7 @@ export default function AdminUsers() {
     }
   }
 
-async function handleAddUser(e) {
+/*async function handleAddUser(e) {
   e.preventDefault()
 
   if (!newUserForm.displayName.trim() || !newUserForm.email.trim()) {
@@ -244,7 +244,7 @@ async function handleAddUser(e) {
   } finally {
     setAddingUser(false)
   }
-}
+}*/
     setAddingUser(true)
     try {
       // Generate a unique ID
@@ -440,10 +440,6 @@ async function handleAddUser(e) {
             className="pl-10"
           />
         </div>
-        <Button onClick={() => setShowAddUser(true)} className="whitespace-nowrap">
-          <UserPlus size={18} />
-          Aggiungi utente
-        </Button>
       </div>
 
       {/* Users list */}
