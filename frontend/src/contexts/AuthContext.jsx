@@ -3,8 +3,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   GoogleAuthProvider,
   signOut,
   updateProfile,
@@ -55,7 +54,9 @@ export function AuthProvider({ children }) {
   }
 
   async function loginWithGoogle() {
-    await signInWithRedirect(auth, googleProvider)
+    const cred = await signInWithPopup(auth, googleProvider)
+    await ensureUserDoc(cred.user)
+    return cred
   }
 
   function logout() {
@@ -63,14 +64,6 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    getRedirectResult(auth)
-      .then(async (result) => {
-        if (result?.user) {
-          await ensureUserDoc(result.user)
-        }
-      })
-      .catch(console.error)
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user)
       if (user) {
