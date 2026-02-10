@@ -134,6 +134,19 @@ export const useAppStore = create((set, get) => ({
     }))
   },
 
+  addUserToStore: (user) => {
+    set((s) => ({
+      users: [...s.users, user],
+    }))
+  },
+
+  removeUserFromStore: (userId) => {
+    set((s) => ({
+      users: s.users.filter((u) => u.id !== userId),
+      prenotazioni: s.prenotazioni.filter((p) => p.userId !== userId),
+    }))
+  },
+
   setCurrentMonthPaid: (userId, paid) => {
     set((s) => ({
       currentMonthPaidMap: { ...s.currentMonthPaidMap, [userId]: paid },
