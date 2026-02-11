@@ -3,124 +3,111 @@ import { TrendingUp, TrendingDown, Users, BookOpen, AlertCircle, Check, X, Calen
 import { format, subMonths } from 'date-fns'
 import { it } from 'date-fns/locale'
 import { useAppStore } from '../../stores/appStore'
-import { getMonthlyPayments, setMonthlyPaymentStatus } from '../../lib/firestore'
+import { getCensimento, getCensimentoPayments, setCensimentoMonthPaid } from '../../lib/firestore'
 import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import { cn } from '../../lib/utils'
+import { PAYMENT_TYPES, getPaymentTypeInfo, isMensile } from './AdminUsers'
 
-// Prezzo mensile e prezzo per lezione (modifica secondo le tue tariffe)
-const PREZZO_MENSILE = 60
-const PREZZO_LEZIONE = 10
+const ISCRIZIONE = 30
 
 export default function AdminNonPaganti() {
-  const { users, usersLoaded, loadUsers, spese, speseLoaded, loadSpese, prenotazioni } = useAppStore()
+  const { spese, speseLoaded, loadSpese } = useAppStore()
 
-  const [loading, setLoading] = useState(!usersLoaded || !speseLoaded)
+  const [persone, setPersone] = useState([])
+  const [loadingPersone, setLoadingPersone] = useState(true)
+  const [loadingSpese, setLoadingSpese] = useState(!speseLoaded)
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
-  const [paymentsData, setPaymentsData] = useState({})
+  const [paymentsData, setPaymentsData] = useState({})   // { personaId: boolean }
   const [loadingPayments, setLoadingPayments] = useState(true)
   const [activeTab, setActiveTab] = useState('riepilogo')
 
-  useEffect(() => {
-    initData()
-  }, [])
+  useEffect(() => { initData() }, [])
 
   useEffect(() => {
-    if (usersLoaded) {
-      loadPaymentsForMonth(selectedMonth)
-    }
-  }, [selectedMonth, usersLoaded])
+    if (!loadingPersone) loadPaymentsForMonth(selectedMonth)
+  }, [selectedMonth, loadingPersone])
 
   async function initData() {
-    setLoading(true)
     try {
-      const ops = []
-      if (!usersLoaded) ops.push(loadUsers())
+      const ops = [getCensimento()]
       if (!speseLoaded) ops.push(loadSpese())
-      await Promise.all(ops)
-      await loadPaymentsForMonth(selectedMonth)
+      const [censData] = await Promise.all(ops)
+      setPersone(censData)
     } catch (err) {
-      console.error('Error loading data:', err)
+      console.error('Errore init:', err)
     } finally {
-      setLoading(false)
+      setLoadingPersone(false)
+      setLoadingSpese(false)
     }
   }
 
   async function loadPaymentsForMonth(yearMonth) {
     setLoadingPayments(true)
-    const mensileUsers = users.filter((u) => u.paymentType === 'mensile')
-    const paymentsMap = {}
-
+    const mensili = persone.filter(p => isMensile(p.paymentType))
+    const map = {}
     await Promise.all(
-      mensileUsers.map(async (user) => {
+      mensili.map(async (p) => {
         try {
-          const payments = await getMonthlyPayments(user.id)
-          const monthPayment = payments.find((p) => p.id === yearMonth)
-          paymentsMap[user.id] = monthPayment?.paid || false
-        } catch {
-          paymentsMap[user.id] = false
-        }
+          const payments = await getCensimentoPayments(p.id)
+          const found = payments.find(pay => pay.id === yearMonth)
+          map[p.id] = found?.paid || false
+        } catch { map[p.id] = false }
       })
     )
-
-    setPaymentsData(paymentsMap)
+    setPaymentsData(map)
     setLoadingPayments(false)
   }
 
-  async function handleTogglePayment(userId, yearMonth, currentPaid) {
+  async function handleTogglePayment(personaId, currentPaid) {
     try {
-      await setMonthlyPaymentStatus(userId, yearMonth, !currentPaid)
-      setPaymentsData((prev) => ({ ...prev, [userId]: !currentPaid }))
-    } catch (err) {
-      console.error('Error toggling payment:', err)
-    }
+      await setCensimentoMonthPaid(personaId, selectedMonth, !currentPaid)
+      setPaymentsData(prev => ({ ...prev, [personaId]: !currentPaid }))
+    } catch (err) { console.error('Errore toggle:', err) }
   }
 
-  const last12Months = Array.from({ length: 12 }, (_, i) => {
-    return format(subMonths(new Date(), i), 'yyyy-MM')
-  })
+  const last12Months = Array.from({ length: 12 }, (_, i) =>
+    format(subMonths(new Date(), i), 'yyyy-MM')
+  )
 
   function formatMonth(ym) {
-    const [year, month] = ym.split('-')
-    return format(new Date(parseInt(year), parseInt(month) - 1), 'MMMM yyyy', { locale: it })
+    const [y, m] = ym.split('-')
+    return format(new Date(parseInt(y), parseInt(m) - 1), 'MMMM yyyy', { locale: it })
   }
 
-  function getUserBookingsCount(userId) {
-    return prenotazioni.filter((p) => p.userId === userId).length
-  }
+  // ── Calcoli entrate ──────────────────────────────────────
+  const mensili = persone.filter(p => isMensile(p.paymentType))
+  const perLezione = persone.filter(p => p.paymentType === 'per-lesson')
 
-  // Utenti per tipo
-  const mensileUsers = users.filter((u) => u.paymentType === 'mensile')
-  const perLessonUsers = users.filter((u) => u.paymentType === 'per-lesson')
-
-  // Mensili paganti/non paganti nel mese selezionato
-  const pagantiMensile = mensileUsers.filter((u) => paymentsData[u.id])
-  const nonPagantiMensile = mensileUsers.filter((u) => !paymentsData[u.id])
-
-  // Entrate mensili
-  const entrateMensile = pagantiMensile.length * PREZZO_MENSILE
-
-  // Per-lesson report
-  const perLessonReport = perLessonUsers.map((user) => {
-    const booked = getUserBookingsCount(user.id)
-    const paid = user.lessonsPaid || 0
-    const delta = booked - paid
-    return { user, booked, paid, delta }
+  // Per ogni tipo mensile: quanti hanno pagato questo mese
+  const mensileBreakdown = PAYMENT_TYPES.filter(t => t.value !== 'per-lesson').map(type => {
+    const group = mensili.filter(p => p.paymentType === type.value)
+    const paganti = group.filter(p => paymentsData[p.id])
+    const nonPaganti = group.filter(p => !paymentsData[p.id])
+    return { type, group, paganti, nonPaganti, totale: paganti.length * type.price }
   })
 
-  const perLessonPaid = perLessonReport.filter((r) => r.paid > 0)
-  const perLessonUnpaid = perLessonReport.filter((r) => r.delta > 0)
-  const entrateLezioni = perLessonPaid.reduce((sum, r) => sum + r.paid * PREZZO_LEZIONE, 0)
+  const pagantiMensile = mensili.filter(p => paymentsData[p.id])
+  const nonPagantiMensile = mensili.filter(p => !paymentsData[p.id])
 
-  // Spese del mese selezionato
-  const speseDelMese = spese.filter((s) => s.yearMonth === selectedMonth)
-  const totaleSpese = speseDelMese.reduce((sum, s) => sum + s.amount, 0)
+  const entrateMensile = mensileBreakdown.reduce((s, b) => s + b.totale, 0)
 
-  // Totali
+  const perLessoneTotale = perLezione.reduce((s, p) => s + (p.lessonsPaid || 0), 0)
+  const entrateLezioni = perLessoneTotale * 20  // PREZZO_LEZIONE = 20
+
+  // ── Spese del mese ───────────────────────────────────────
+  const speseDelMese = spese.filter(s => s.yearMonth === selectedMonth)
+  const totaleSpese = speseDelMese.reduce((s, sp) => s + sp.amount, 0)
+
   const totaleEntrate = entrateMensile + entrateLezioni
   const bilancio = totaleEntrate - totaleSpese
 
-  if (loading) {
+  // Crediti mensili non ancora pagati
+  const creditiMensili = mensileBreakdown.reduce(
+    (s, b) => s + b.nonPaganti.length * b.type.price, 0
+  )
+
+  if (loadingPersone || loadingSpese) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="w-8 h-8 rounded-full border-2 border-brand-300 border-t-transparent animate-spin" />
@@ -140,21 +127,16 @@ export default function AdminNonPaganti() {
 
       {/* Selettore mese */}
       <Card>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          <span className="flex items-center gap-2">
-            <Calendar size={16} />
-            Seleziona Mese
-          </span>
+        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+          <Calendar size={16} /> Seleziona Mese
         </label>
         <select
           value={selectedMonth}
           onChange={(e) => setSelectedMonth(e.target.value)}
-          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300 capitalize"
+          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
         >
           {last12Months.map((month) => (
-            <option key={month} value={month} className="capitalize">
-              {formatMonth(month)}
-            </option>
+            <option key={month} value={month}>{formatMonth(month)}</option>
           ))}
         </select>
       </Card>
@@ -166,21 +148,14 @@ export default function AdminNonPaganti() {
       ) : (
         <>
           {/* Bilancio principale */}
-          <div
-            className={cn(
-              'rounded-2xl p-6 border-2 text-center',
-              bilancio >= 0
-                ? 'bg-gradient-to-br from-emerald-50 to-white border-emerald-300'
-                : 'bg-gradient-to-br from-red-50 to-white border-red-300'
-            )}
-          >
+          <div className={cn(
+            'rounded-2xl p-6 border-2 text-center',
+            bilancio >= 0
+              ? 'bg-gradient-to-br from-emerald-50 to-white border-emerald-300'
+              : 'bg-gradient-to-br from-red-50 to-white border-red-300'
+          )}>
             <p className="text-sm font-medium text-gray-500 mb-1">Bilancio del mese</p>
-            <p
-              className={cn(
-                'text-5xl font-bold mb-1',
-                bilancio >= 0 ? 'text-emerald-600' : 'text-red-600'
-              )}
-            >
+            <p className={cn('text-5xl font-bold mb-1', bilancio >= 0 ? 'text-emerald-600' : 'text-red-600')}>
               {bilancio >= 0 ? '+' : ''}€{bilancio.toFixed(2)}
             </p>
             <p className="text-xs text-gray-400 capitalize">{formatMonth(selectedMonth)}</p>
@@ -199,14 +174,18 @@ export default function AdminNonPaganti() {
                 </div>
               </div>
               <div className="mt-3 space-y-1">
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>Mensili ({pagantiMensile.length})</span>
-                  <span className="font-medium">€{entrateMensile.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>Lezioni pagate</span>
-                  <span className="font-medium">€{entrateLezioni.toFixed(2)}</span>
-                </div>
+                {mensileBreakdown.filter(b => b.paganti.length > 0).map(b => (
+                  <div key={b.type.value} className="flex justify-between text-xs text-gray-500">
+                    <span>{b.type.label} ({b.paganti.length})</span>
+                    <span className="font-medium">€{b.totale.toFixed(2)}</span>
+                  </div>
+                ))}
+                {perLessoneTotale > 0 && (
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Lezioni ({perLessoneTotale})</span>
+                    <span className="font-medium">€{entrateLezioni.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -232,18 +211,18 @@ export default function AdminNonPaganti() {
                   ))
                 )}
                 {speseDelMese.length > 3 && (
-                  <p className="text-xs text-gray-400">+{speseDelMese.length - 3} altre spese</p>
+                  <p className="text-xs text-gray-400">+{speseDelMese.length - 3} altre</p>
                 )}
               </div>
             </Card>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-0 border-b border-gray-200 overflow-x-auto">
+          <div className="flex border-b border-gray-200 overflow-x-auto">
             {[
               { key: 'riepilogo', label: 'Riepilogo', icon: BarChart3 },
-              { key: 'mensili', label: `Mensili (${mensileUsers.length})`, icon: Users },
-              { key: 'lezioni', label: `A Lezione (${perLessonUsers.length})`, icon: BookOpen },
+              { key: 'mensili',   label: `Abbonamenti (${mensili.length})`, icon: Users },
+              { key: 'lezioni',   label: `A Lezione (${perLezione.length})`, icon: BookOpen },
             ].map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -267,24 +246,24 @@ export default function AdminNonPaganti() {
               <Card>
                 <h3 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
                   <TrendingUp className="text-emerald-500" size={18} />
-                  Riepilogo entrate
+                  Dettaglio entrate
                 </h3>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                    <div>
-                      <p className="text-sm font-medium text-gray-700">Abbonamenti mensili</p>
-                      <p className="text-xs text-gray-400">
-                        {pagantiMensile.length} paganti × €{PREZZO_MENSILE}
-                      </p>
+                  {mensileBreakdown.map(b => (
+                    <div key={b.type.value} className="flex items-center justify-between py-2 border-b border-gray-100">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">{b.type.label}</p>
+                        <p className="text-xs text-gray-400">
+                          {b.paganti.length} paganti × €{b.type.price}
+                        </p>
+                      </div>
+                      <p className="text-sm font-bold text-emerald-600">€{b.totale.toFixed(2)}</p>
                     </div>
-                    <p className="text-sm font-bold text-emerald-600">€{entrateMensile.toFixed(2)}</p>
-                  </div>
+                  ))}
                   <div className="flex items-center justify-between py-2 border-b border-gray-100">
                     <div>
-                      <p className="text-sm font-medium text-gray-700">Lezioni singole pagate</p>
-                      <p className="text-xs text-gray-400">
-                        {perLessonPaid.reduce((s, r) => s + r.paid, 0)} lezioni × €{PREZZO_LEZIONE}
-                      </p>
+                      <p className="text-sm font-medium text-gray-700">Lezioni singole</p>
+                      <p className="text-xs text-gray-400">{perLessoneTotale} lezioni × €20</p>
                     </div>
                     <p className="text-sm font-bold text-emerald-600">€{entrateLezioni.toFixed(2)}</p>
                   </div>
@@ -303,22 +282,17 @@ export default function AdminNonPaganti() {
                 {speseDelMese.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-4">Nessuna spesa registrata</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     {speseDelMese.map((s) => (
-                      <div
-                        key={s.id}
-                        className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
-                      >
+                      <div key={s.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                         <div>
-                          <p className="text-sm font-medium text-gray-700 capitalize">
-                            {s.type.replace(/_/g, ' ')}
-                          </p>
+                          <p className="text-sm font-medium text-gray-700 capitalize">{s.type.replace(/_/g, ' ')}</p>
                           {s.description && <p className="text-xs text-gray-400">{s.description}</p>}
                         </div>
                         <p className="text-sm font-bold text-red-600">€{s.amount.toFixed(2)}</p>
                       </div>
                     ))}
-                    <div className="flex justify-between font-semibold text-sm pt-1">
+                    <div className="flex justify-between font-semibold text-sm pt-2">
                       <span className="text-gray-600">Totale uscite</span>
                       <span className="text-red-600">€{totaleSpese.toFixed(2)}</span>
                     </div>
@@ -326,22 +300,20 @@ export default function AdminNonPaganti() {
                 )}
               </Card>
 
-              {(nonPagantiMensile.length > 0 || perLessonUnpaid.length > 0) && (
+              {(creditiMensili > 0 || nonPagantiMensile.length > 0) && (
                 <Card className="bg-amber-50 border-amber-200">
                   <div className="flex items-start gap-3">
                     <AlertCircle className="text-amber-600 mt-0.5 flex-shrink-0" size={18} />
                     <div>
-                      <h4 className="font-semibold text-amber-900 text-sm mb-2">Crediti ancora da incassare</h4>
-                      {nonPagantiMensile.length > 0 && (
-                        <p className="text-xs text-amber-800">
-                          {nonPagantiMensile.length} mensili non pagati — €{(nonPagantiMensile.length * PREZZO_MENSILE).toFixed(2)} da incassare
+                      <h4 className="font-semibold text-amber-900 text-sm mb-1">Crediti da incassare</h4>
+                      {mensileBreakdown.filter(b => b.nonPaganti.length > 0).map(b => (
+                        <p key={b.type.value} className="text-xs text-amber-800">
+                          {b.nonPaganti.length} {b.type.label.toLowerCase()} non pagati — €{(b.nonPaganti.length * b.type.price).toFixed(2)}
                         </p>
-                      )}
-                      {perLessonUnpaid.length > 0 && (
-                        <p className="text-xs text-amber-800 mt-1">
-                          {perLessonUnpaid.reduce((s, r) => s + r.delta, 0)} lezioni non saldate — €{(perLessonUnpaid.reduce((s, r) => s + r.delta, 0) * PREZZO_LEZIONE).toFixed(2)} da incassare
-                        </p>
-                      )}
+                      ))}
+                      <p className="text-xs font-semibold text-amber-900 mt-1">
+                        Totale da incassare: €{creditiMensili.toFixed(2)}
+                      </p>
                     </div>
                   </div>
                 </Card>
@@ -349,123 +321,76 @@ export default function AdminNonPaganti() {
             </div>
           )}
 
-          {/* Tab: Mensili */}
+          {/* Tab: Abbonamenti */}
           {activeTab === 'mensili' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Card className="border-emerald-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <Check className="text-emerald-500" size={18} />
-                  <h3 className="font-semibold text-gray-800">
-                    Hanno Pagato ({pagantiMensile.length})
-                  </h3>
-                </div>
-                {pagantiMensile.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">Nessun pagamento ancora</p>
-                ) : (
-                  <div className="space-y-2">
-                    {pagantiMensile.map((user) => (
-                      <div
-                        key={user.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-200"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{user.displayName || 'Senza nome'}</p>
-                          <p className="text-xs text-gray-500">{user.email}</p>
-                        </div>
-                        <button
-                          onClick={() => handleTogglePayment(user.id, selectedMonth, true)}
-                          className="p-2 rounded-lg bg-emerald-100 text-emerald-600 hover:bg-emerald-200 transition-colors"
-                          title="Segna come non pagato"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-
-              <Card className="border-red-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <AlertCircle className="text-red-500" size={18} />
-                  <h3 className="font-semibold text-gray-800">
-                    Non Hanno Pagato ({nonPagantiMensile.length})
-                  </h3>
-                </div>
-                {nonPagantiMensile.length === 0 ? (
-                  <div className="text-center py-6">
-                    <Check className="mx-auto text-emerald-400 mb-2" size={36} />
-                    <p className="text-sm text-gray-500">Tutti hanno pagato! 🎉</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {nonPagantiMensile.map((user) => (
-                      <div
-                        key={user.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-200"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{user.displayName || 'Senza nome'}</p>
-                          <p className="text-xs text-gray-500">{user.email}</p>
-                        </div>
-                        <button
-                          onClick={() => handleTogglePayment(user.id, selectedMonth, false)}
-                          className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
-                          title="Segna come pagato"
-                        >
-                          <Check size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
+            <div className="space-y-4">
+              {mensileBreakdown.map(b => (
+                b.group.length === 0 ? null : (
+                  <Card key={b.type.value}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-gray-800">{b.type.label}</h3>
+                      <span className="text-xs text-gray-400">€{b.type.price}/mese</span>
+                    </div>
+                    <div className="space-y-2">
+                      {b.group.map(persona => {
+                        const paid = paymentsData[persona.id] || false
+                        return (
+                          <div
+                            key={persona.id}
+                            className={cn(
+                              'flex items-center justify-between p-3 rounded-xl border',
+                              paid ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'
+                            )}
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-800">{persona.cognome} {persona.nome}</p>
+                            </div>
+                            <button
+                              onClick={() => handleTogglePayment(persona.id, paid)}
+                              className={cn(
+                                'p-2 rounded-lg transition-colors',
+                                paid
+                                  ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
+                                  : 'bg-red-100 text-red-600 hover:bg-red-200'
+                              )}
+                              title={paid ? 'Segna come non pagato' : 'Segna come pagato'}
+                            >
+                              {paid ? <X size={14} /> : <Check size={14} />}
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </Card>
+                )
+              ))}
+              {mensili.length === 0 && (
+                <Card><p className="text-sm text-gray-400 text-center py-6">Nessun abbonato nel censimento</p></Card>
+              )}
             </div>
           )}
 
           {/* Tab: A Lezione */}
           {activeTab === 'lezioni' && (
             <div className="space-y-2">
-              {perLessonUsers.length === 0 ? (
-                <Card>
-                  <p className="text-sm text-gray-400 text-center py-6">Nessun utente a lezione</p>
-                </Card>
+              {perLezione.length === 0 ? (
+                <Card><p className="text-sm text-gray-400 text-center py-6">Nessuna persona a lezione</p></Card>
               ) : (
-                perLessonReport.map(({ user, booked, paid, delta }) => (
-                  <Card
-                    key={user.id}
-                    className={cn(
-                      'p-4',
-                      delta > 0 ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50/30'
-                    )}
-                  >
+                perLezione.map(persona => (
+                  <Card key={persona.id} className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div
-                          className={cn(
-                            'w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold',
-                            delta > 0 ? 'bg-amber-200 text-amber-700' : 'bg-emerald-200 text-emerald-700'
-                          )}
-                        >
-                          {(user.displayName || user.email || '?')[0].toUpperCase()}
+                        <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-bold">
+                          {(persona.cognome || '?')[0].toUpperCase()}
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-gray-800">{user.displayName || 'Senza nome'}</p>
-                          <p className="text-xs text-gray-500">
-                            {booked} prenotate · {paid} pagate
-                          </p>
+                          <p className="text-sm font-semibold text-gray-800">{persona.cognome} {persona.nome}</p>
+                          <p className="text-xs text-gray-500">{persona.lessonsPaid || 0} lezioni pagate</p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        {delta > 0 ? (
-                          <Badge variant="warning">{delta} da saldare</Badge>
-                        ) : (
-                          <Badge variant="success">In pari</Badge>
-                        )}
-                        <p className="text-xs text-gray-400 mt-1">
-                          €{(paid * PREZZO_LEZIONE).toFixed(2)} incassati
-                        </p>
-                      </div>
+                      <p className="text-sm font-bold text-emerald-600">
+                        €{((persona.lessonsPaid || 0) * 20).toFixed(2)}
+                      </p>
                     </div>
                   </Card>
                 ))
