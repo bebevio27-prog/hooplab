@@ -9,6 +9,12 @@ import {
   createPrenotazione as fbCreatePrenotazione,
   deletePrenotazione as fbDeletePrenotazione,
   getAllUsers as fbGetAllUsers,
+  createUserProfile as fbCreateUserProfile,
+  deleteUserProfile as fbDeleteUserProfile,
+  getSpeseFisse as fbGetSpeseFisse,
+  createSpesaFissa as fbCreateSpesaFissa,
+  updateSpesaFissa as fbUpdateSpesaFissa,
+  deleteSpesaFissa as fbDeleteSpesaFissa,
 } from '../lib/firestore'
 import { formatDate } from '../lib/calendar'
 import { collection, getDocs, query, where } from 'firebase/firestore'
@@ -29,6 +35,8 @@ export const useAppStore = create((set, get) => ({
   users: [],
   usersLoaded: false,
   currentMonthPaidMap: {},
+  spese: [],
+  speseLoaded: false,
   loaded: false,
   loading: false,
 
@@ -128,9 +136,25 @@ export const useAppStore = create((set, get) => ({
     return data
   },
 
+  addUser: async (userId, data) => {
+    await fbCreateUserProfile(userId, data)
+    const newUser = { id: userId, ...data }
+    set((s) => ({ 
+      users: [...s.users, newUser].sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
+    }))
+    return newUser
+  },
+
   updateUserInStore: (userId, data) => {
     set((s) => ({
       users: s.users.map((u) => (u.id === userId ? { ...u, ...data } : u)),
+    }))
+  },
+
+  removeUserFromStore: async (userId) => {
+    await fbDeleteUserProfile(userId)
+    set((s) => ({
+      users: s.users.filter((u) => u.id !== userId),
     }))
   },
 
@@ -142,6 +166,37 @@ export const useAppStore = create((set, get) => ({
 
   setCurrentMonthPaidMap: (map) => {
     set({ currentMonthPaidMap: map })
+  },
+
+  // ─── Spese Fisse ────────────────────────────────────
+  loadSpese: async () => {
+    if (get().speseLoaded) return get().spese
+    const data = await fbGetSpeseFisse()
+    set({ spese: data, speseLoaded: true })
+    return data
+  },
+
+  addSpesa: async (data) => {
+    const docRef = await fbCreateSpesaFissa(data)
+    const newSpesa = { id: docRef.id, ...data }
+    set((s) => ({ 
+      spese: [...s.spese, newSpesa].sort((a, b) => b.yearMonth.localeCompare(a.yearMonth))
+    }))
+    return newSpesa
+  },
+
+  editSpesa: async (spesaId, data) => {
+    await fbUpdateSpesaFissa(spesaId, data)
+    set((s) => ({
+      spese: s.spese.map((sp) => (sp.id === spesaId ? { ...sp, ...data } : sp)),
+    }))
+  },
+
+  removeSpesa: async (spesaId) => {
+    await fbDeleteSpesaFissa(spesaId)
+    set((s) => ({
+      spese: s.spese.filter((sp) => sp.id !== spesaId),
+    }))
   },
 
   // ─── Force refresh (for edge cases) ───────────────
