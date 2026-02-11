@@ -50,7 +50,7 @@ export async function getCorsi() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-export async function getCorso(corsoId) {
+export async function getAllPersone(corsoId) {
   const snap = await getAllPersone(query(collection(db, 'utenti'), orderBy('name')))
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
