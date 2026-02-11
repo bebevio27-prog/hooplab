@@ -20,7 +20,22 @@ import Modal from '../../components/ui/Modal'
 import Badge from '../../components/ui/Badge'
 import { cn } from '../../lib/utils'
 
-const EMPTY_FORM = { nome: '', cognome: '', paymentType: 'mensile', note: '' }
+export const PAYMENT_TYPES = [
+  { value: 'monosettimanale', label: 'Monosettimanale', short: '1x/sett', price: 30 },
+  { value: 'bisettimanale',   label: 'Bisettimanale',   short: '2x/sett', price: 85 },
+  { value: 'trisettimanale',  label: 'Trisettimanale',  short: '3x/sett', price: 115 },
+  { value: 'per-lesson',      label: 'A lezione',       short: 'lezione', price: 20 },
+]
+
+export function getPaymentTypeInfo(value) {
+  return PAYMENT_TYPES.find(t => t.value === value) || PAYMENT_TYPES[0]
+}
+
+export function isMensile(paymentType) {
+  return paymentType !== 'per-lesson'
+}
+
+const EMPTY_FORM = { nome: '', cognome: '', paymentType: 'monosettimanale', note: '' }
 const currentYearMonth = format(new Date(), 'yyyy-MM')
 
 export default function AdminUsers() {
@@ -28,20 +43,17 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  // Modal dettaglio
   const [selected, setSelected] = useState(null)
   const [payments, setPayments] = useState([])
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
 
-  // Modal creazione / modifica
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
 
-  // Modal eliminazione
   const [showDelete, setShowDelete] = useState(false)
   const [toDelete, setToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
@@ -60,12 +72,11 @@ export default function AdminUsers() {
     }
   }
 
-  // ─── Apertura dettaglio ──────────────────────────────────
   async function openDetail(persona) {
     setSelected(persona)
     setNote(persona.note || '')
     setShowHistory(false)
-    if (persona.paymentType === 'mensile') {
+    if (isMensile(persona.paymentType)) {
       try {
         const p = await getCensimentoPayments(persona.id)
         setPayments(p)
@@ -77,7 +88,6 @@ export default function AdminUsers() {
 
   function closeDetail() { setSelected(null); setPayments([]) }
 
-  // ─── Toggle pagamento mensile ────────────────────────────
   async function toggleMonthPaid(yearMonth, currentPaid) {
     if (!selected) return
     try {
@@ -94,11 +104,9 @@ export default function AdminUsers() {
     return payments.find(p => p.id === yearMonth)?.paid || false
   }
 
-  // ─── Aggiorna lezioni pagate (per-lesson) ───────────────
   async function updateLessonsPaid(delta) {
     if (!selected) return
-    const current = selected.lessonsPaid || 0
-    const newVal = Math.max(0, current + delta)
+    const newVal = Math.max(0, (selected.lessonsPaid || 0) + delta)
     try {
       await updateCensimentoPersona(selected.id, { lessonsPaid: newVal })
       const updated = { ...selected, lessonsPaid: newVal }
@@ -116,7 +124,6 @@ export default function AdminUsers() {
     finally { setSaving(false) }
   }
 
-  // ─── Salva note ─────────────────────────────────────────
   async function saveNote() {
     if (!selected) return
     setSaving(true)
@@ -128,18 +135,13 @@ export default function AdminUsers() {
     finally { setSaving(false) }
   }
 
-  // ─── Crea / Modifica persona ─────────────────────────────
-  function openCreate() {
-    setForm(EMPTY_FORM)
-    setEditingId(null)
-    setShowForm(true)
-  }
+  function openCreate() { setForm(EMPTY_FORM); setEditingId(null); setShowForm(true) }
 
   function openEdit(persona) {
     setForm({
       nome: persona.nome || '',
       cognome: persona.cognome || '',
-      paymentType: persona.paymentType || 'mensile',
+      paymentType: persona.paymentType || 'monosettimanale',
       note: persona.note || '',
     })
     setEditingId(persona.id)
@@ -153,38 +155,23 @@ export default function AdminUsers() {
     }
     setSubmitting(true)
     try {
+      const payload = {
+        nome: form.nome.trim(),
+        cognome: form.cognome.trim(),
+        paymentType: form.paymentType,
+        note: form.note.trim(),
+      }
       if (editingId) {
-        await updateCensimentoPersona(editingId, {
-          nome: form.nome.trim(),
-          cognome: form.cognome.trim(),
-          paymentType: form.paymentType,
-          note: form.note.trim(),
-        })
-        setPersone(prev => prev.map(p =>
-          p.id === editingId
-            ? { ...p, nome: form.nome.trim(), cognome: form.cognome.trim(), paymentType: form.paymentType, note: form.note.trim() }
-            : p
-        ).sort((a, b) => (a.cognome || '').localeCompare(b.cognome || '')))
-        if (selected?.id === editingId) {
-          setSelected(prev => ({ ...prev, nome: form.nome.trim(), cognome: form.cognome.trim(), paymentType: form.paymentType, note: form.note.trim() }))
-        }
+        await updateCensimentoPersona(editingId, payload)
+        setPersone(prev =>
+          prev.map(p => p.id === editingId ? { ...p, ...payload } : p)
+            .sort((a, b) => (a.cognome || '').localeCompare(b.cognome || ''))
+        )
+        if (selected?.id === editingId) setSelected(prev => ({ ...prev, ...payload }))
       } else {
-        const docRef = await addCensimentoPersona({
-          nome: form.nome.trim(),
-          cognome: form.cognome.trim(),
-          paymentType: form.paymentType,
-          note: form.note.trim(),
-          lessonsPaid: 0,
-        })
-        const newPersona = {
-          id: docRef.id,
-          nome: form.nome.trim(),
-          cognome: form.cognome.trim(),
-          paymentType: form.paymentType,
-          note: form.note.trim(),
-          lessonsPaid: 0,
-        }
-        setPersone(prev => [...prev, newPersona].sort((a, b) => (a.cognome || '').localeCompare(b.cognome || '')))
+        const docRef = await addCensimentoPersona({ ...payload, lessonsPaid: 0 })
+        const newP = { id: docRef.id, ...payload, lessonsPaid: 0 }
+        setPersone(prev => [...prev, newP].sort((a, b) => (a.cognome || '').localeCompare(b.cognome || '')))
       }
       setShowForm(false)
     } catch (err) {
@@ -193,11 +180,7 @@ export default function AdminUsers() {
     } finally { setSubmitting(false) }
   }
 
-  // ─── Elimina persona ────────────────────────────────────
-  function confirmDelete(persona) {
-    setToDelete(persona)
-    setShowDelete(true)
-  }
+  function confirmDelete(persona) { setToDelete(persona); setShowDelete(true) }
 
   async function handleDelete() {
     if (!toDelete) return
@@ -210,24 +193,13 @@ export default function AdminUsers() {
       if (selected?.id === toDelete.id) closeDetail()
     } catch (err) {
       console.error('Errore eliminazione:', err)
-      alert('Errore durante l\'eliminazione')
+      alert("Errore durante l'eliminazione")
     } finally { setDeleting(false) }
   }
 
-  // ─── Filtro ricerca ──────────────────────────────────────
-  const filtered = persone.filter(p => {
-    const full = `${p.nome} ${p.cognome}`.toLowerCase()
-    return full.includes(search.toLowerCase())
-  })
-
-  // Badge stato pagamento
-  function getStatus(persona) {
-    if (persona.paymentType === 'mensile') {
-      // non possiamo sapere senza caricare i pagamenti, mostriamo il tipo
-      return null
-    }
-    return null
-  }
+  const filtered = persone.filter(p =>
+    `${p.nome} ${p.cognome}`.toLowerCase().includes(search.toLowerCase())
+  )
 
   const recentMonths = Array.from({ length: 6 }, (_, i) => format(subMonths(new Date(), i), 'yyyy-MM'))
 
@@ -269,39 +241,40 @@ export default function AdminUsers() {
       {/* Lista */}
       {filtered.length === 0 ? (
         <Card className="text-center py-8 text-gray-400">
-          {persone.length === 0 ? 'Nessuna persona nel censimento. Aggiungine una!' : 'Nessun risultato per la ricerca.'}
+          {persone.length === 0 ? 'Nessuna persona nel censimento. Aggiungine una!' : 'Nessun risultato.'}
         </Card>
       ) : (
         <div className="space-y-2">
-          {filtered.map((persona) => (
-            <Card
-              key={persona.id}
-              className="p-4 transition-all hover:shadow-md cursor-pointer"
-              onClick={() => openDetail(persona)}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-sm font-semibold">
-                    {(persona.cognome || persona.nome || '?')[0].toUpperCase()}
+          {filtered.map((persona) => {
+            const typeInfo = getPaymentTypeInfo(persona.paymentType)
+            return (
+              <Card
+                key={persona.id}
+                className="p-4 transition-all hover:shadow-md cursor-pointer"
+                onClick={() => openDetail(persona)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-sm font-semibold">
+                      {(persona.cognome || persona.nome || '?')[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{persona.cognome} {persona.nome}</p>
+                      {persona.note && (
+                        <p className="text-xs text-gray-400 truncate max-w-[180px]">{persona.note}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {persona.cognome} {persona.nome}
-                    </p>
-                    {persona.note && (
-                      <p className="text-xs text-gray-400 truncate max-w-[180px]">{persona.note}</p>
-                    )}
+                  <div className="flex items-center gap-3">
+                    <Badge variant={persona.paymentType === 'per-lesson' ? 'secondary' : 'primary'}>
+                      {typeInfo.short}
+                    </Badge>
+                    <ChevronRight className="text-gray-400" size={18} />
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={persona.paymentType === 'mensile' ? 'primary' : 'secondary'}>
-                    {persona.paymentType === 'mensile' ? 'Mensile' : 'A lezione'}
-                  </Badge>
-                  <ChevronRight className="text-gray-400" size={18} />
-                </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            )
+          })}
         </div>
       )}
 
@@ -316,11 +289,10 @@ export default function AdminUsers() {
           const [cy, cm] = currentYearMonth.split('-')
           const currentMonthName = format(new Date(parseInt(cy), parseInt(cm) - 1), 'MMMM yyyy', { locale: it })
           const pastMonths = recentMonths.slice(1)
+          const typeInfo = getPaymentTypeInfo(selected.paymentType)
 
           return (
             <div className="space-y-4">
-
-              {/* Azioni header */}
               <div className="flex items-center justify-between">
                 <button
                   onClick={() => { closeDetail(); openEdit(selected) }}
@@ -331,21 +303,20 @@ export default function AdminUsers() {
                 <button
                   onClick={() => { confirmDelete(selected); closeDetail() }}
                   className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Elimina"
                 >
                   <Trash2 size={16} />
                 </button>
               </div>
 
-              {/* Tipo abbonamento (sola lettura, modificabile via "Modifica dati") */}
-              <div className="flex gap-2">
-                <Badge variant={selected.paymentType === 'mensile' ? 'primary' : 'secondary'} className="text-sm px-3 py-1">
-                  {selected.paymentType === 'mensile' ? '📅 Abbonamento mensile' : '🎯 Pagamento a lezione'}
+              <div className="flex gap-2 items-center">
+                <Badge variant={selected.paymentType === 'per-lesson' ? 'secondary' : 'primary'} className="text-sm px-3 py-1">
+                  {typeInfo.label}
                 </Badge>
+                <span className="text-sm text-gray-500">€{typeInfo.price} / {selected.paymentType === 'per-lesson' ? 'lezione' : 'mese'}</span>
               </div>
 
-              {/* ── Vista mensile ── */}
-              {selected.paymentType === 'mensile' && (
+              {/* ── Mensile (mono/bi/tri) ── */}
+              {isMensile(selected.paymentType) && (
                 <div className="space-y-3">
                   <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                     Mese corrente
@@ -407,7 +378,7 @@ export default function AdminUsers() {
                 </div>
               )}
 
-              {/* ── Vista per lezione ── */}
+              {/* ── Per lezione ── */}
               {selected.paymentType === 'per-lesson' && (
                 <div className="space-y-3">
                   <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -451,7 +422,6 @@ export default function AdminUsers() {
                   {saving ? '...' : 'Salva note'}
                 </Button>
               </div>
-
             </div>
           )
         })()}
@@ -484,20 +454,21 @@ export default function AdminUsers() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo abbonamento</label>
-            <div className="flex gap-2">
-              {['mensile', 'per-lesson'].map((type) => (
+            <label className="block text-sm font-medium text-gray-700 mb-2">Tipo abbonamento</label>
+            <div className="grid grid-cols-2 gap-2">
+              {PAYMENT_TYPES.map((type) => (
                 <button
-                  key={type}
-                  onClick={() => setForm(f => ({ ...f, paymentType: type }))}
+                  key={type.value}
+                  onClick={() => setForm(f => ({ ...f, paymentType: type.value }))}
                   className={cn(
-                    'flex-1 py-2.5 rounded-xl text-sm font-medium transition-all border',
-                    form.paymentType === type
+                    'py-2.5 px-3 rounded-xl text-sm font-medium transition-all border text-left',
+                    form.paymentType === type.value
                       ? 'bg-brand-50 border-brand-200 text-brand-700'
                       : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
                   )}
                 >
-                  {type === 'mensile' ? 'Mensile' : 'A lezione'}
+                  <span className="block">{type.label}</span>
+                  <span className="text-xs opacity-70">€{type.price}/mese</span>
                 </button>
               ))}
             </div>
