@@ -1,13 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Euro, Receipt, Zap, Droplet, Flame, FileText } from 'lucide-react'
+import { Plus, Trash2, Euro, Receipt, Zap, Droplet, Flame, FileText, Edit3 } from 'lucide-react'
 import { format, subMonths } from 'date-fns'
 import { it } from 'date-fns/locale'
-import {
-  getSpeseFisse,
-  createSpesaFissa,
-  updateSpesaFissa,
-  deleteSpesaFissa,
-} from '../../lib/firestore'
+import { useAppStore } from '../../stores/appStore'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -22,63 +17,61 @@ const SPESA_TYPES = [
   { value: 'altro', label: 'Altro', icon: FileText, color: 'gray' },
 ]
 
+const EMPTY_FORM = {
+  type: 'affitto',
+  amount: '',
+  yearMonth: format(new Date(), 'yyyy-MM'),
+  description: '',
+}
+
 export default function AdminSpese() {
-  const [spese, setSpese] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [editingSpesa, setEditingSpesa] = useState(null)
+  const { spese, speseLoaded, loadSpese, addSpesa, editSpesa, removeSpesa } = useAppStore()
+  
+  const [loading, setLoading] = useState(!speseLoaded)
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [form, setForm] = useState(EMPTY_FORM)
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
   const [saving, setSaving] = useState(false)
-  
-  const [formData, setFormData] = useState({
-    type: 'affitto',
-    amount: '',
-    yearMonth: format(new Date(), 'yyyy-MM'),
-    description: '',
-  })
 
   useEffect(() => {
-    loadSpese()
+    initSpese()
   }, [])
 
-  async function loadSpese() {
+  async function initSpese() {
+    if (speseLoaded) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
-      const data = await getSpeseFisse()
-      setSpese(data)
+      await loadSpese()
     } catch (err) {
       console.error('Error loading spese:', err)
-      alert('Errore nel caricamento delle spese')
     } finally {
       setLoading(false)
     }
   }
 
-  function openAddModal() {
-    setEditingSpesa(null)
-    setFormData({
-      type: 'affitto',
-      amount: '',
-      yearMonth: selectedMonth,
-      description: '',
-    })
-    setShowModal(true)
+  function openCreate() {
+    setForm({ ...EMPTY_FORM, yearMonth: selectedMonth })
+    setEditingId(null)
+    setShowForm(true)
   }
 
-  function openEditModal(spesa) {
-    setEditingSpesa(spesa)
-    setFormData({
+  function openEdit(spesa) {
+    setForm({
       type: spesa.type,
       amount: spesa.amount.toString(),
       yearMonth: spesa.yearMonth,
       description: spesa.description || '',
     })
-    setShowModal(true)
+    setEditingId(spesa.id)
+    setShowForm(true)
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (!formData.amount || parseFloat(formData.amount) <= 0) {
+  async function handleSave() {
+    if (!form.amount || parseFloat(form.amount) <= 0) {
       alert('Inserisci un importo valido')
       return
     }
@@ -86,20 +79,19 @@ export default function AdminSpese() {
     setSaving(true)
     try {
       const data = {
-        type: formData.type,
-        amount: parseFloat(formData.amount),
-        yearMonth: formData.yearMonth,
-        description: formData.description,
+        type: form.type,
+        amount: parseFloat(form.amount),
+        yearMonth: form.yearMonth,
+        description: form.description,
       }
 
-      if (editingSpesa) {
-        await updateSpesaFissa(editingSpesa.id, data)
+      if (editingId) {
+        await editSpesa(editingId, data)
       } else {
-        await createSpesaFissa(data)
+        await addSpesa(data)
       }
 
-      await loadSpese()
-      setShowModal(false)
+      setShowForm(false)
     } catch (err) {
       console.error('Error saving spesa:', err)
       alert('Errore durante il salvataggio')
@@ -109,17 +101,16 @@ export default function AdminSpese() {
   }
 
   async function handleDelete(spesaId) {
-    if (!confirm('Sei sicuro di voler eliminare questa spesa?')) return
+    if (!confirm('Eliminare questa spesa?')) return
     try {
-      await deleteSpesaFissa(spesaId)
-      await loadSpese()
+      await removeSpesa(spesaId)
     } catch (err) {
       console.error('Error deleting spesa:', err)
-      alert("Errore durante l'eliminazione")
+      alert('Errore eliminazione')
     }
   }
 
-  // Genera ultimi 12 mesi
+  // Ultimi 12 mesi
   const last12Months = Array.from({ length: 12 }, (_, i) => {
     const date = subMonths(new Date(), i)
     return format(date, 'yyyy-MM')
@@ -134,13 +125,12 @@ export default function AdminSpese() {
     return acc
   }, {})
 
-  // Calcola totale per il mese selezionato
+  // Totali
   const totalForSelectedMonth = (speseByMonth[selectedMonth] || []).reduce(
     (sum, spesa) => sum + spesa.amount,
     0
   )
 
-  // Calcola totale generale ultimi 12 mesi
   const totalLast12Months = last12Months.reduce((sum, month) => {
     const monthSpese = speseByMonth[month] || []
     return sum + monthSpese.reduce((s, spesa) => s + spesa.amount, 0)
@@ -162,15 +152,15 @@ export default function AdminSpese() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Spese Fisse</h1>
-          <p className="text-sm text-gray-500">Gestisci affitto, bollette e altre spese</p>
+          <p className="text-sm text-gray-500">Gestisci affitto, bollette e spese</p>
         </div>
-        <Button onClick={openAddModal}>
+        <Button onClick={openCreate} size="sm">
           <Plus size={16} />
           Nuova Spesa
         </Button>
       </div>
 
-      {/* Riepilogo totali */}
+      {/* Riepilogo */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="bg-gradient-to-br from-brand-50 to-white border-brand-200">
           <div className="flex items-center justify-between">
@@ -203,31 +193,29 @@ export default function AdminSpese() {
 
       {/* Selettore mese */}
       <Card>
-        <div className="space-y-3">
-          <label className="text-sm font-medium text-gray-700">Seleziona Mese</label>
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
-          >
-            {last12Months.map((month) => {
-              const [year, monthNum] = month.split('-')
-              const monthName = format(
-                new Date(parseInt(year), parseInt(monthNum) - 1),
-                'MMMM yyyy',
-                { locale: it }
-              )
-              return (
-                <option key={month} value={month}>
-                  {monthName}
-                </option>
-              )
-            })}
-          </select>
-        </div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Seleziona Mese</label>
+        <select
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(e.target.value)}
+          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
+        >
+          {last12Months.map((month) => {
+            const [year, monthNum] = month.split('-')
+            const monthName = format(
+              new Date(parseInt(year), parseInt(monthNum) - 1),
+              'MMMM yyyy',
+              { locale: it }
+            )
+            return (
+              <option key={month} value={month}>
+                {monthName}
+              </option>
+            )
+          })}
+        </select>
       </Card>
 
-      {/* Lista spese del mese */}
+      {/* Lista spese */}
       <Card>
         <h3 className="text-lg font-semibold text-gray-800 mb-4">
           Spese di{' '}
@@ -241,8 +229,8 @@ export default function AdminSpese() {
         {speseForSelectedMonth.length === 0 ? (
           <div className="text-center py-12">
             <Receipt className="mx-auto text-gray-300 mb-3" size={48} />
-            <p className="text-gray-500">Nessuna spesa registrata per questo mese</p>
-            <Button variant="secondary" onClick={openAddModal} className="mt-4">
+            <p className="text-gray-500">Nessuna spesa per questo mese</p>
+            <Button variant="secondary" onClick={openCreate} className="mt-4">
               <Plus size={16} />
               Aggiungi Spesa
             </Button>
@@ -263,7 +251,7 @@ export default function AdminSpese() {
               return (
                 <div
                   key={spesa.id}
-                  className="flex items-center justify-between p-4 rounded-xl border border-gray-200 bg-white hover:shadow-sm transition-shadow"
+                  className="flex items-center justify-between p-4 rounded-xl border bg-white hover:shadow-sm transition"
                 >
                   <div className="flex items-center gap-3">
                     <div className={cn('w-10 h-10 rounded-full flex items-center justify-center border', colorClass)}>
@@ -283,14 +271,14 @@ export default function AdminSpese() {
                     </p>
                     <div className="flex gap-1">
                       <button
-                        onClick={() => openEditModal(spesa)}
-                        className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+                        onClick={() => openEdit(spesa)}
+                        className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50"
                       >
-                        <FileText size={16} />
+                        <Edit3 size={16} />
                       </button>
                       <button
                         onClick={() => handleDelete(spesa.id)}
-                        className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -300,7 +288,7 @@ export default function AdminSpese() {
               )
             })}
 
-            <div className="pt-3 mt-3 border-t border-gray-200">
+            <div className="pt-3 mt-3 border-t">
               <div className="flex items-center justify-between">
                 <p className="font-semibold text-gray-700">Totale</p>
                 <p className="text-xl font-bold text-brand-600">
@@ -312,20 +300,29 @@ export default function AdminSpese() {
         )}
       </Card>
 
-      {/* Modal Aggiungi/Modifica Spesa */}
+      {/* Modal Create/Edit */}
       <Modal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        title={editingSpesa ? 'Modifica Spesa' : 'Nuova Spesa'}
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={editingId ? 'Modifica Spesa' : 'Nuova Spesa'}
+        footer={
+          <Button 
+            className="w-full" 
+            onClick={handleSave} 
+            disabled={saving || !form.amount}
+          >
+            {saving ? 'Salvataggio...' : editingId ? 'Salva Modifiche' : 'Aggiungi Spesa'}
+          </Button>
+        }
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Tipo di Spesa
             </label>
             <select
-              value={formData.type}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+              value={form.type}
+              onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
             >
               {SPESA_TYPES.map((type) => (
@@ -336,52 +333,39 @@ export default function AdminSpese() {
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Importo (€)</label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-              placeholder="0.00"
-              required
-            />
-          </div>
+          <Input
+            label="Importo (€)"
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.amount}
+            onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+            placeholder="0.00"
+          />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mese</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Mese</label>
             <input
               type="month"
-              value={formData.yearMonth}
-              onChange={(e) => setFormData({ ...formData, yearMonth: e.target.value })}
+              value={form.yearMonth}
+              onChange={(e) => setForm((f) => ({ ...f, yearMonth: e.target.value }))}
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
-              required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Descrizione (opzionale)
             </label>
             <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               rows={3}
-              placeholder="Note aggiuntive..."
+              placeholder="Note..."
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none"
             />
           </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setShowModal(false)} disabled={saving}>
-              Annulla
-            </Button>
-            <Button type="submit" className="flex-1" disabled={saving}>
-              {saving ? 'Salvataggio...' : editingSpesa ? 'Salva Modifiche' : 'Aggiungi Spesa'}
-            </Button>
-          </div>
-        </form>
+        </div>
       </Modal>
     </div>
   )
