@@ -500,7 +500,7 @@ export default function AdminUsers() {
 
       {/* Modal conferma eliminazione */}
       <Modal
-        isOpen={showDeleteConfirm}
+        open={showDeleteConfirm}
         onClose={() => !deleting && setShowDeleteConfirm(false)}
         title="Conferma eliminazione"
       >
@@ -555,7 +555,7 @@ export default function AdminUsers() {
 
       {/* Modal dettaglio utente */}
       <Modal
-        isOpen={!!selectedUser}
+        open={!!selectedUser}
         onClose={() => setSelectedUser(null)}
         title={selectedUser?.displayName || selectedUser?.email || 'Utente'}
       >
@@ -822,7 +822,7 @@ export default function AdminUsers() {
 
       {/* Modal Creazione Nuovo Utente */}
       <Modal
-        isOpen={showCreateUser}
+        open={showCreateUser}
         onClose={() => setShowCreateUser(false)}
         title="Crea Nuovo Utente"
       >
