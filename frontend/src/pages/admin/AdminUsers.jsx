@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
@@ -10,19 +10,19 @@ import {
   Calendar,
 } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
+import { Button } from '../../components/ui/button'
+import { Badge } from '../../components/ui/badge'
+import { cn } from '../../lib/utils'
 
 export default function AdminUsers({ users = [], onUpdateUser, onCreateUser }) {
   const [selectedUser, setSelectedUser] = useState(null)
-  const [currentYearMonth] = useState(format(new Date(), 'yyyy-MM'))
-
+  const currentYearMonth = format(new Date(), 'yyyy-MM')
   const currentMonthLabel = format(new Date(), 'MMMM yyyy', { locale: it })
 
   const handleSettleLessons = (userId, delta) => {
+    const user = users.find(u => u.id === userId)
     onUpdateUser(userId, {
-      lessonsPaid: (users.find(u => u.id === userId)?.lessonsPaid || 0) + delta,
+      lessonsPaid: (user?.lessonsPaid || 0) + delta,
     })
   }
 
@@ -65,9 +65,9 @@ export default function AdminUsers({ users = [], onUpdateUser, onCreateUser }) {
         </Button>
       </div>
 
-      {/* Lista utenti */}
+      {/* Layout */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Colonna sinistra – lista */}
+        {/* Lista utenti */}
         <div className="bg-white rounded-2xl shadow-sm border p-4 space-y-2">
           <h2 className="text-sm font-semibold text-gray-700 mb-2">
             Tutti gli utenti
@@ -89,7 +89,7 @@ export default function AdminUsers({ users = [], onUpdateUser, onCreateUser }) {
           ))}
         </div>
 
-        {/* Colonna destra – dettagli */}
+        {/* Dettagli */}
         <div className="md:col-span-2">
           {selectedUser ? (
             <UserDetails
@@ -120,7 +120,6 @@ function UserDetails({
   user,
   currentYearMonth,
   currentMonthLabel,
-  onUpdateUser,
   onSettleLessons,
   onToggleMonthPaid,
   onSettleMonth,
@@ -192,7 +191,7 @@ function UserDetails({
         </div>
       </div>
 
-      {/* BLOCCO PAGAMENTO MENSILE – STESSO STILE */}
+      {/* BLOCCO PAGAMENTO MENSILE */}
       <div className="bg-white rounded-2xl shadow-sm border p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div>
