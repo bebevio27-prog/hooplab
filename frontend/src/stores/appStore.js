@@ -15,6 +15,10 @@ import {
   createSpesaFissa as fbCreateSpesaFissa,
   updateSpesaFissa as fbUpdateSpesaFissa,
   deleteSpesaFissa as fbDeleteSpesaFissa,
+  getAllPersone as fbGetAllPersone,
+  createPersona as fbCreatePersona,
+  updatePersona as fbUpdatePersona,
+  deletePersona as fbDeletePersona,
 } from '../lib/firestore'
 import { formatDate } from '../lib/calendar'
 import { collection, getDocs, query, where } from 'firebase/firestore'
@@ -37,6 +41,9 @@ export const useAppStore = create((set, get) => ({
   currentMonthPaidMap: {},
   spese: [],
   speseLoaded: false,
+  anagrafica: [],
+  anagraficaLoaded: false,
+  anagraficaMonthPaidMap: {},
   loaded: false,
   loading: false,
 
@@ -197,6 +204,59 @@ export const useAppStore = create((set, get) => ({
     set((s) => ({
       spese: s.spese.filter((sp) => sp.id !== spesaId),
     }))
+  },
+
+  // ─── Anagrafica (censimento persone) ──────────────────────────
+  loadAnagrafica: async () => {
+    if (get().anagraficaLoaded) return get().anagrafica
+    const data = await fbGetAllPersone()
+    set({ anagrafica: data, anagraficaLoaded: true })
+    return data
+  },
+
+  addPersona: async (data) => {
+    const docRef = await fbCreatePersona(data)
+    const newPersona = { id: docRef.id, ...data, createdAt: new Date() }
+    set((s) => ({ 
+      anagrafica: [...s.anagrafica, newPersona].sort((a, b) => 
+        (a.nome || '').localeCompare(b.nome || '')
+      )
+    }))
+    return newPersona
+  },
+
+  editPersona: async (personaId, data) => {
+    await fbUpdatePersona(personaId, data)
+    set((s) => ({
+      anagrafica: s.anagrafica.map((p) => 
+        p.id === personaId ? { ...p, ...data } : p
+      )
+    }))
+  },
+
+  removePersona: async (personaId) => {
+    await fbDeletePersona(personaId)
+    set((s) => ({
+      anagrafica: s.anagrafica.filter((p) => p.id !== personaId)
+    }))
+  },
+
+  updatePersonaInStore: (personaId, data) => {
+    set((s) => ({
+      anagrafica: s.anagrafica.map((p) => 
+        p.id === personaId ? { ...p, ...data } : p
+      )
+    }))
+  },
+
+  setAnagraficaMonthPaid: (personaId, paid) => {
+    set((s) => ({
+      anagraficaMonthPaidMap: { ...s.anagraficaMonthPaidMap, [personaId]: paid }
+    }))
+  },
+
+  setAnagraficaMonthPaidMap: (map) => {
+    set({ anagraficaMonthPaidMap: map })
   },
 
   // ─── Force refresh (for edge cases) ───────────────
