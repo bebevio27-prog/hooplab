@@ -55,57 +55,6 @@ export async function getCorso(corsoId) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
 
-
-export async function createPersona(data) {
-  return addDoc(collection(db, 'anagrafica'), {
-    ...data,
-    paymentType: data.paymentType || 'mensile',
-    lessonsPaid: data.lessonsPaid || 0,
-    createdAt: serverTimestamp(),
-  })
-}
-
-export async function updatePersona(personaId, data) {
-  return updateDoc(doc(db, 'anagrafica', personaId), data)
-}
-
-export async function deletePersona(personaId) {
-  // Elimina anche i pagamenti mensili associati
-  const paymentsSnap = await getDocs(collection(db, 'anagrafica', personaId, 'payments'))
-  await Promise.all(paymentsSnap.docs.map(d => deleteDoc(d.ref)))
-  
-  // Elimina la persona
-  return deleteDoc(doc(db, 'anagrafica', personaId))
-}
-
-export async function getAllPersone() {
-  const snap = await getDocs(query(collection(db, 'anagrafica'), orderBy('nome')))
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-}
-
-export async function getPersona(personaId) {
-  const snap = await getDoc(doc(db, 'anagrafica', personaId))
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null
-}
-
-// ─── Pagamenti Anagrafica ────────────────────────────────────────────────────
-
-/**
- * Per persone con paymentType 'mensile':
- * anagrafica/{personaId}/payments/{YYYY-MM}
- * { paid: boolean, updatedAt: Timestamp }
- */
-
-export async function setPersonaMonthlyPayment(personaId, yearMonth, paid) {
-  const ref = doc(db, 'anagrafica', personaId, 'payments', yearMonth)
-  return setDoc(ref, { paid, updatedAt: serverTimestamp() }, { merge: true })
-}
-
-export async function getPersonaMonthlyPayments(personaId) {
-  const snap = await getDocs(collection(db, 'anagrafica', personaId, 'payments'))
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-}
-
 // ─── Lezioni (overrides for single occurrences) ─────────
 
 /**
@@ -331,4 +280,52 @@ export async function deletePendingUser(pendingId) {
 
 export async function updatePendingUser(pendingId, data) {
   return updateDoc(doc(db, 'pendingUsers', pendingId), data)
+}
+
+// ─── Censimento (anagrafica indipendente) ─────────────────
+/**
+ * Persona censimento shape:
+ * {
+ *   nome: string,
+ *   cognome: string,
+ *   paymentType: 'mensile' | 'per-lesson',
+ *   // mensile: subcollection payments/{YYYY-MM} → { paid: boolean }
+ *   // per-lesson: { lessonsPaid: number }
+ *   note: string,
+ *   createdAt: Timestamp,
+ * }
+ */
+
+export async function getCensimento() {
+  const snap = await getDocs(query(collection(db, 'censimento'), orderBy('cognome')))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export async function addCensimentoPersona(data) {
+  return addDoc(collection(db, 'censimento'), {
+    ...data,
+    lessonsPaid: data.paymentType === 'per-lesson' ? (data.lessonsPaid || 0) : undefined,
+    createdAt: serverTimestamp(),
+  })
+}
+
+export async function updateCensimentoPersona(personaId, data) {
+  return updateDoc(doc(db, 'censimento', personaId), data)
+}
+
+export async function deleteCensimentoPersona(personaId) {
+  // Elimina anche i pagamenti mensili
+  const paymentsSnap = await getDocs(collection(db, 'censimento', personaId, 'payments'))
+  await Promise.all(paymentsSnap.docs.map(d => deleteDoc(d.ref)))
+  return deleteDoc(doc(db, 'censimento', personaId))
+}
+
+export async function getCensimentoPayments(personaId) {
+  const snap = await getDocs(collection(db, 'censimento', personaId, 'payments'))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export async function setCensimentoMonthPaid(personaId, yearMonth, paid) {
+  const ref = doc(db, 'censimento', personaId, 'payments', yearMonth)
+  return setDoc(ref, { paid, updatedAt: serverTimestamp() }, { merge: true })
 }
