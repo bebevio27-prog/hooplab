@@ -29,7 +29,7 @@ export default function AdminSpese() {
   const [editingSpesa, setEditingSpesa] = useState(null)
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
   const [saving, setSaving] = useState(false)
-
+  
   const [formData, setFormData] = useState({
     type: 'affitto',
     amount: '',
@@ -47,7 +47,7 @@ export default function AdminSpese() {
       const data = await getSpeseFisse()
       setSpese(data)
     } catch (err) {
-      console.error('Errore caricamento spese:', err)
+      console.error('Error loading spese:', err)
       alert('Errore nel caricamento delle spese')
     } finally {
       setLoading(false)
@@ -101,43 +101,60 @@ export default function AdminSpese() {
       await loadSpese()
       setShowModal(false)
     } catch (err) {
-      console.error('Errore salvataggio spesa:', err)
+      console.error('Error saving spesa:', err)
       alert('Errore durante il salvataggio')
     } finally {
       setSaving(false)
     }
   }
 
-  async function handleDelete(id) {
+  async function handleDelete(spesaId) {
     if (!confirm('Sei sicuro di voler eliminare questa spesa?')) return
     try {
-      await deleteSpesaFissa(id)
+      await deleteSpesaFissa(spesaId)
       await loadSpese()
     } catch (err) {
-      console.error('Errore eliminazione spesa:', err)
-      alert('Errore durante l\'eliminazione')
+      console.error('Error deleting spesa:', err)
+      alert("Errore durante l'eliminazione")
     }
   }
 
+  // Genera ultimi 12 mesi
   const last12Months = Array.from({ length: 12 }, (_, i) => {
     const date = subMonths(new Date(), i)
     return format(date, 'yyyy-MM')
   })
 
+  // Raggruppa spese per mese
   const speseByMonth = spese.reduce((acc, spesa) => {
-    if (!acc[spesa.yearMonth]) acc[spesa.yearMonth] = []
+    if (!acc[spesa.yearMonth]) {
+      acc[spesa.yearMonth] = []
+    }
     acc[spesa.yearMonth].push(spesa)
     return acc
   }, {})
 
-  const speseForSelectedMonth = speseByMonth[selectedMonth] || []
-  const totalForSelectedMonth = speseForSelectedMonth.reduce((sum, s) => sum + s.amount, 0)
+  // Calcola totale per il mese selezionato
+  const totalForSelectedMonth = (speseByMonth[selectedMonth] || []).reduce(
+    (sum, spesa) => sum + spesa.amount,
+    0
+  )
+
+  // Calcola totale generale ultimi 12 mesi
   const totalLast12Months = last12Months.reduce((sum, month) => {
     const monthSpese = speseByMonth[month] || []
     return sum + monthSpese.reduce((s, spesa) => s + spesa.amount, 0)
   }, 0)
 
-  if (loading) return <div className="flex items-center justify-center py-12"><div className="w-8 h-8 border-2 border-brand-300 border-t-transparent rounded-full animate-spin" /></div>
+  const speseForSelectedMonth = speseByMonth[selectedMonth] || []
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="w-8 h-8 rounded-full border-2 border-brand-300 border-t-transparent animate-spin" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -147,16 +164,21 @@ export default function AdminSpese() {
           <h1 className="text-2xl font-bold text-gray-800">Spese Fisse</h1>
           <p className="text-sm text-gray-500">Gestisci affitto, bollette e altre spese</p>
         </div>
-        <Button onClick={openAddModal}><Plus size={16}/> Nuova Spesa</Button>
+        <Button onClick={openAddModal}>
+          <Plus size={16} />
+          Nuova Spesa
+        </Button>
       </div>
 
-      {/* Totali */}
+      {/* Riepilogo totali */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="bg-gradient-to-br from-brand-50 to-white border-brand-200">
-          <div className="flex justify-between items-center">
+          <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Spese Mese Corrente</p>
-              <p className="text-3xl font-bold text-brand-600 mt-1">€{totalForSelectedMonth.toFixed(2)}</p>
+              <p className="text-3xl font-bold text-brand-600 mt-1">
+                €{totalForSelectedMonth.toFixed(2)}
+              </p>
             </div>
             <div className="w-12 h-12 rounded-full bg-brand-100 flex items-center justify-center">
               <Euro className="text-brand-600" size={24} />
@@ -165,10 +187,12 @@ export default function AdminSpese() {
         </Card>
 
         <Card className="bg-gradient-to-br from-gray-50 to-white border-gray-200">
-          <div className="flex justify-between items-center">
+          <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Totale Ultimi 12 Mesi</p>
-              <p className="text-3xl font-bold text-gray-700 mt-1">€{totalLast12Months.toFixed(2)}</p>
+              <p className="text-3xl font-bold text-gray-700 mt-1">
+                €{totalLast12Months.toFixed(2)}
+              </p>
             </div>
             <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
               <Receipt className="text-gray-600" size={24} />
@@ -179,98 +203,183 @@ export default function AdminSpese() {
 
       {/* Selettore mese */}
       <Card>
-        <label className="text-sm font-medium text-gray-700">Seleziona Mese</label>
-        <select
-          value={selectedMonth}
-          onChange={e => setSelectedMonth(e.target.value)}
-          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300 mt-1"
-        >
-          {last12Months.map(m => {
-            const [y, mm] = m.split('-')
-            return <option key={m} value={m}>{format(new Date(y, mm-1), 'MMMM yyyy', { locale: it })}</option>
-          })}
-        </select>
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-gray-700">Seleziona Mese</label>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
+          >
+            {last12Months.map((month) => {
+              const [year, monthNum] = month.split('-')
+              const monthName = format(
+                new Date(parseInt(year), parseInt(monthNum) - 1),
+                'MMMM yyyy',
+                { locale: it }
+              )
+              return (
+                <option key={month} value={month}>
+                  {monthName}
+                </option>
+              )
+            })}
+          </select>
+        </div>
       </Card>
 
-      {/* Lista spese */}
+      {/* Lista spese del mese */}
       <Card>
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">
+          Spese di{' '}
+          {format(
+            new Date(selectedMonth.split('-')[0], parseInt(selectedMonth.split('-')[1]) - 1),
+            'MMMM yyyy',
+            { locale: it }
+          )}
+        </h3>
+
         {speseForSelectedMonth.length === 0 ? (
           <div className="text-center py-12">
             <Receipt className="mx-auto text-gray-300 mb-3" size={48} />
-            <p className="text-gray-500">Nessuna spesa registrata</p>
-            <Button variant="secondary" onClick={openAddModal} className="mt-4"><Plus size={16}/> Aggiungi Spesa</Button>
+            <p className="text-gray-500">Nessuna spesa registrata per questo mese</p>
+            <Button variant="secondary" onClick={openAddModal} className="mt-4">
+              <Plus size={16} />
+              Aggiungi Spesa
+            </Button>
           </div>
         ) : (
           <div className="space-y-2">
-            {speseForSelectedMonth.map(spesa => {
-              const typeInfo = SPESA_TYPES.find(t => t.value === spesa.type)
+            {speseForSelectedMonth.map((spesa) => {
+              const typeInfo = SPESA_TYPES.find((t) => t.value === spesa.type)
               const Icon = typeInfo?.icon || FileText
               const colorClass = {
                 blue: 'bg-blue-50 text-blue-600 border-blue-200',
                 yellow: 'bg-yellow-50 text-yellow-600 border-yellow-200',
                 cyan: 'bg-cyan-50 text-cyan-600 border-cyan-200',
                 orange: 'bg-orange-50 text-orange-600 border-orange-200',
-                gray: 'bg-gray-50 text-gray-600 border-gray-200'
+                gray: 'bg-gray-50 text-gray-600 border-gray-200',
               }[typeInfo?.color || 'gray']
 
               return (
-                <div key={spesa.id} className="flex items-center justify-between p-4 rounded-xl border border-gray-200 bg-white hover:shadow-sm transition-shadow">
+                <div
+                  key={spesa.id}
+                  className="flex items-center justify-between p-4 rounded-xl border border-gray-200 bg-white hover:shadow-sm transition-shadow"
+                >
                   <div className="flex items-center gap-3">
                     <div className={cn('w-10 h-10 rounded-full flex items-center justify-center border', colorClass)}>
-                      <Icon size={20}/>
+                      <Icon size={20} />
                     </div>
                     <div>
                       <p className="font-medium text-gray-800">{typeInfo?.label || spesa.type}</p>
-                      {spesa.description && <p className="text-xs text-gray-500">{spesa.description}</p>}
+                      {spesa.description && (
+                        <p className="text-xs text-gray-500">{spesa.description}</p>
+                      )}
                     </div>
                   </div>
+
                   <div className="flex items-center gap-3">
-                    <p className="text-lg font-semibold text-gray-800">€{spesa.amount.toFixed(2)}</p>
+                    <p className="text-lg font-semibold text-gray-800">
+                      €{spesa.amount.toFixed(2)}
+                    </p>
                     <div className="flex gap-1">
-                      <button onClick={() => openEditModal(spesa)} className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"><FileText size={16}/></button>
-                      <button onClick={() => handleDelete(spesa.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={16}/></button>
+                      <button
+                        onClick={() => openEditModal(spesa)}
+                        className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+                      >
+                        <FileText size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(spesa.id)}
+                        className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </div>
                 </div>
               )
             })}
-            <div className="pt-3 mt-3 border-t border-gray-200 flex justify-between">
-              <p className="font-semibold text-gray-700">Totale</p>
-              <p className="text-xl font-bold text-brand-600">€{totalForSelectedMonth.toFixed(2)}</p>
+
+            <div className="pt-3 mt-3 border-t border-gray-200">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-gray-700">Totale</p>
+                <p className="text-xl font-bold text-brand-600">
+                  €{totalForSelectedMonth.toFixed(2)}
+                </p>
+              </div>
             </div>
           </div>
         )}
       </Card>
 
-      {/* Modal Aggiungi/Modifica */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingSpesa ? 'Modifica Spesa' : 'Nuova Spesa'}>
+      {/* Modal Aggiungi/Modifica Spesa */}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editingSpesa ? 'Modifica Spesa' : 'Nuova Spesa'}
+      >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo di Spesa</label>
-            <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300">
-              {SPESA_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tipo di Spesa
+            </label>
+            <select
+              value={formData.type}
+              onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
+            >
+              {SPESA_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
             </select>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Importo (€)</label>
-            <Input type="number" step="0.01" min="0" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} placeholder="0.00" required />
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.amount}
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+              placeholder="0.00"
+              required
+            />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Mese</label>
-            <input type="month" value={formData.yearMonth} onChange={e => setFormData({...formData, yearMonth: e.target.value})} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300" required />
+            <input
+              type="month"
+              value={formData.yearMonth}
+              onChange={(e) => setFormData({ ...formData, yearMonth: e.target.value })}
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
+              required
+            />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione (opzionale)</label>
-            <textarea value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} rows={3} placeholder="Note aggiuntive..." className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Descrizione (opzionale)
+            </label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              rows={3}
+              placeholder="Note aggiuntive..."
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none"
+            />
           </div>
 
           <div className="flex gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setShowModal(false)} disabled={saving}>Annulla</Button>
-            <Button type="submit" className="flex-1" disabled={saving}>{saving ? 'Salvataggio...' : editingSpesa ? 'Salva Modifiche' : 'Aggiungi Spesa'}</Button>
+            <Button type="button" variant="secondary" onClick={() => setShowModal(false)} disabled={saving}>
+              Annulla
+            </Button>
+            <Button type="submit" className="flex-1" disabled={saving}>
+              {saving ? 'Salvataggio...' : editingSpesa ? 'Salva Modifiche' : 'Aggiungi Spesa'}
+            </Button>
           </div>
         </form>
       </Modal>
