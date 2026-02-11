@@ -51,6 +51,11 @@ export async function getCorsi() {
 }
 
 export async function getCorso(corsoId) {
+  const snap = await getAllPersone(query(collection(db, 'utenti'), orderBy('name')))
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null
+}
+
+export async function getCorso(corsoId) {
   const snap = await getDoc(doc(db, 'corsi', corsoId))
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
