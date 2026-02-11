@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Search, ChevronRight, ChevronDown, StickyNote, Check, X, Minus, Plus, AlertCircle, Trash2, UserPlus } from 'lucide-react'
-import { useAuth } from '../../contexts/AuthContext'
-import { useAppStore } from '../../stores/appStore'
+import {
+  Search, ChevronRight, ChevronDown, StickyNote, Check, X,
+  Minus, Plus, AlertCircle, Trash2, UserPlus,
+} from 'lucide-react'
 import { format, subMonths } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
-  updateUserProfile,
-  setMonthlyPaymentStatus,
-  getMonthlyPayments,
-  deleteUserProfile,
-  addPendingUser,
-  getPendingUsers,
-  deletePendingUser,
+  getCensimento,
+  addCensimentoPersona,
+  updateCensimentoPersona,
+  deleteCensimentoPersona,
+  getCensimentoPayments,
+  setCensimentoMonthPaid,
 } from '../../lib/firestore'
 import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
@@ -20,300 +20,216 @@ import Modal from '../../components/ui/Modal'
 import Badge from '../../components/ui/Badge'
 import { cn } from '../../lib/utils'
 
-export default function AdminUsers() {
-  const { currentUser } = useAuth()
-  const {
-    users,
-    usersLoaded,
-    loadUsers,
-    updateUserInStore,
-    removeUserFromStore,
-    currentMonthPaidMap,
-    setCurrentMonthPaid,
-    setCurrentMonthPaidMap: setMonthPaidMap,
-  } = useAppStore()
+const EMPTY_FORM = { nome: '', cognome: '', paymentType: 'mensile', note: '' }
+const currentYearMonth = format(new Date(), 'yyyy-MM')
 
-  const [loading, setLoading] = useState(!usersLoaded)
+export default function AdminUsers() {
+  const [persone, setPersone] = useState([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [selectedUser, setSelectedUser] = useState(null)
-  const [monthlyPayments, setMonthlyPaymentsState] = useState([])
-  const [notes, setNotes] = useState('')
+
+  // Modal dettaglio
+  const [selected, setSelected] = useState(null)
+  const [payments, setPayments] = useState([])
+  const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
 
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [userToDelete, setUserToDelete] = useState(null)
+  // Modal creazione / modifica
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Modal eliminazione
+  const [showDelete, setShowDelete] = useState(false)
+  const [toDelete, setToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
-  const [showCreateUser, setShowCreateUser] = useState(false)
-  const [newUserData, setNewUserData] = useState({
-    email: '',
-    displayName: '',
-    paymentType: 'mensile',
-  })
-  const [creating, setCreating] = useState(false)
-  
-  const [pendingUsers, setPendingUsers] = useState([])
-  const [loadingPending, setLoadingPending] = useState(false)
+  useEffect(() => { loadPersone() }, [])
 
-  const currentYearMonth = format(new Date(), 'yyyy-MM')
-
-  useEffect(() => {
-    initUsers()
-    loadPendingUsers()
-  }, [])
-
-  async function initUsers() {
-    if (usersLoaded) {
-      setLoading(false)
-      return
-    }
+  async function loadPersone() {
     setLoading(true)
     try {
-      const data = await loadUsers()
-      const mensileUsers = data.filter((u) => u.paymentType === 'mensile')
-      const paidMap = {}
-      await Promise.all(
-        mensileUsers.map(async (u) => {
-          try {
-            const payments = await getMonthlyPayments(u.id)
-            const current = payments.find((p) => p.id === currentYearMonth)
-            paidMap[u.id] = current?.paid || false
-          } catch {
-            paidMap[u.id] = false
-          }
-        })
-      )
-      setMonthPaidMap(paidMap)
+      const data = await getCensimento()
+      setPersone(data)
     } catch (err) {
-      console.error('Error loading users:', err)
+      console.error('Errore caricamento censimento:', err)
     } finally {
       setLoading(false)
     }
   }
 
-  async function openUserDetail(user) {
-    setSelectedUser(user)
-    setNotes(user.notes || '')
+  // ─── Apertura dettaglio ──────────────────────────────────
+  async function openDetail(persona) {
+    setSelected(persona)
+    setNote(persona.note || '')
     setShowHistory(false)
-    if (user.paymentType === 'mensile') {
+    if (persona.paymentType === 'mensile') {
       try {
-        const payments = await getMonthlyPayments(user.id)
-        setMonthlyPaymentsState(payments)
-      } catch {
-        setMonthlyPaymentsState([])
-      }
+        const p = await getCensimentoPayments(persona.id)
+        setPayments(p)
+      } catch { setPayments([]) }
+    } else {
+      setPayments([])
     }
   }
 
-  async function handlePaymentTypeChange(userId, type) {
-    setSaving(true)
-    try {
-      await updateUserProfile(userId, { paymentType: type })
-      updateUserInStore(userId, { paymentType: type })
-      if (selectedUser?.id === userId) {
-        setSelectedUser((prev) => ({ ...prev, paymentType: type }))
-      }
-    } catch (err) {
-      console.error('Error updating payment type:', err)
-    } finally {
-      setSaving(false)
-    }
-  }
+  function closeDetail() { setSelected(null); setPayments([]) }
 
-  async function handleToggleMonthPaid(userId, yearMonth, currentPaid) {
+  // ─── Toggle pagamento mensile ────────────────────────────
+  async function toggleMonthPaid(yearMonth, currentPaid) {
+    if (!selected) return
     try {
-      await setMonthlyPaymentStatus(userId, yearMonth, !currentPaid)
-      setMonthlyPaymentsState((prev) => {
-        const existing = prev.find((p) => p.id === yearMonth)
-        if (existing) {
-          return prev.map((p) => (p.id === yearMonth ? { ...p, paid: !currentPaid } : p))
-        }
+      await setCensimentoMonthPaid(selected.id, yearMonth, !currentPaid)
+      setPayments(prev => {
+        const existing = prev.find(p => p.id === yearMonth)
+        if (existing) return prev.map(p => p.id === yearMonth ? { ...p, paid: !currentPaid } : p)
         return [...prev, { id: yearMonth, paid: !currentPaid }]
       })
-      if (yearMonth === currentYearMonth) {
-        setCurrentMonthPaid(userId, !currentPaid)
-      }
-    } catch (err) {
-      console.error('Error toggling payment:', err)
-    }
+    } catch (err) { console.error('Errore toggle pagamento:', err) }
   }
-
-  function getUserBookingsCount(userId) {
-    return useAppStore.getState().prenotazioni.filter((p) => p.userId === userId).length
-  }
-
-  async function handleLessonsPaidUpdate(userId, delta) {
-    const user = users.find((u) => u.id === userId)
-    const current = user?.lessonsPaid || 0
-    const newVal = Math.max(0, current + delta)
-    try {
-      await updateUserProfile(userId, { lessonsPaid: newVal })
-      updateUserInStore(userId, { lessonsPaid: newVal })
-      if (selectedUser?.id === userId) {
-        setSelectedUser((prev) => ({ ...prev, lessonsPaid: newVal }))
-      }
-    } catch (err) {
-      console.error('Error updating lessons paid:', err)
-    }
-  }
-
-  async function handleSettle(userId) {
-    const booked = getUserBookingsCount(userId)
-    try {
-      await updateUserProfile(userId, { lessonsPaid: booked })
-      updateUserInStore(userId, { lessonsPaid: booked })
-      if (selectedUser?.id === userId) {
-        setSelectedUser((prev) => ({ ...prev, lessonsPaid: booked }))
-      }
-    } catch (err) {
-      console.error('Error settling:', err)
-    }
-  }
-
-  async function handleSaveNotes() {
-    if (!selectedUser) return
-    setSaving(true)
-    try {
-      await updateUserProfile(selectedUser.id, { notes })
-      updateUserInStore(selectedUser.id, { notes })
-    } catch (err) {
-      console.error('Error saving notes:', err)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function confirmDeleteUser(user) {
-    setUserToDelete(user)
-    setShowDeleteConfirm(true)
-  }
-
-  async function handleDeleteUser() {
-    if (!userToDelete) return
-    setDeleting(true)
-    try {
-      await deleteUserProfile(userToDelete.id)
-      removeUserFromStore(userToDelete.id)
-      setShowDeleteConfirm(false)
-      setSelectedUser(null)
-      setUserToDelete(null)
-      alert('Utente eliminato con successo')
-    } catch (err) {
-      console.error('Error deleting user:', err)
-      alert("Errore durante l'eliminazione dell'utente")
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  async function handleCreateUser(e) {
-    e.preventDefault()
-    if (!newUserData.email || !newUserData.displayName) {
-      alert('Compila tutti i campi obbligatori')
-      return
-    }
-
-    setCreating(true)
-    try {
-      // Aggiungi alla lista utenti pending
-      await addPendingUser({
-        email: newUserData.email,
-        displayName: newUserData.displayName,
-        paymentType: newUserData.paymentType,
-        role: 'user',
-        lessonsPaid: 0,
-      })
-
-      await loadPendingUsers()
-      
-      setShowCreateUser(false)
-      setNewUserData({
-        email: '',
-        displayName: '',
-        paymentType: 'mensile',
-      })
-      alert(`Utente aggiunto alla lista!\n\nPer completare la registrazione:\n1. Vai su Firebase Console > Authentication\n2. Clicca "Add User"\n3. Usa email: ${newUserData.email}\n4. Genera una password temporanea\n5. Invia le credenziali all'utente`)
-    } catch (err) {
-      console.error('Error creating user:', err)
-      alert('Errore durante la creazione dell\'utente: ' + err.message)
-    } finally {
-      setCreating(false)
-    }
-  }
-  
-  async function loadPendingUsers() {
-    setLoadingPending(true)
-    try {
-      const pending = await getPendingUsers()
-      setPendingUsers(pending)
-    } catch (err) {
-      console.error('Error loading pending users:', err)
-    } finally {
-      setLoadingPending(false)
-    }
-  }
-  
-  async function handleDeletePending(pendingId) {
-    if (!confirm('Rimuovere questo utente dalla lista?')) return
-    try {
-      await deletePendingUser(pendingId)
-      await loadPendingUsers()
-    } catch (err) {
-      console.error('Error deleting pending user:', err)
-      alert('Errore durante l\'eliminazione')
-    }
-  }
-
-  const filteredUsers = users
-    .filter((u) => u.id !== currentUser?.uid)
-    .filter(
-      (u) =>
-        (u.displayName || '').toLowerCase().includes(search.toLowerCase()) ||
-        (u.email || '').toLowerCase().includes(search.toLowerCase())
-    )
-    .sort((a, b) => {
-      const aOk =
-        a.paymentType === 'per-lesson'
-          ? getUserBookingsCount(a.id) - (a.lessonsPaid || 0) <= 0
-          : a.paymentType === 'mensile'
-          ? currentMonthPaidMap[a.id] || false
-          : true
-      const bOk =
-        b.paymentType === 'per-lesson'
-          ? getUserBookingsCount(b.id) - (b.lessonsPaid || 0) <= 0
-          : b.paymentType === 'mensile'
-          ? currentMonthPaidMap[b.id] || false
-          : true
-      return aOk === bOk ? 0 : aOk ? 1 : -1
-    })
-
-  const unpaidSummary = users
-    .filter((u) => u.id !== currentUser?.uid)
-    .reduce(
-      (acc, user) => {
-        if (user.paymentType === 'mensile') {
-          const isPaid = currentMonthPaidMap[user.id] || false
-          if (!isPaid) acc.mensileUnpaid.push(user)
-        } else if (user.paymentType === 'per-lesson') {
-          const booked = getUserBookingsCount(user.id)
-          const paid = user.lessonsPaid || 0
-          const delta = booked - paid
-          if (delta > 0) acc.perLessonUnpaid.push({ user, delta })
-        }
-        return acc
-      },
-      { mensileUnpaid: [], perLessonUnpaid: [] }
-    )
-
-  const recentMonths = Array.from({ length: 6 }, (_, i) => {
-    const d = subMonths(new Date(), i)
-    return format(d, 'yyyy-MM')
-  })
 
   function isMonthPaid(yearMonth) {
-    return monthlyPayments.find((p) => p.id === yearMonth)?.paid || false
+    return payments.find(p => p.id === yearMonth)?.paid || false
   }
+
+  // ─── Aggiorna lezioni pagate (per-lesson) ───────────────
+  async function updateLessonsPaid(delta) {
+    if (!selected) return
+    const current = selected.lessonsPaid || 0
+    const newVal = Math.max(0, current + delta)
+    try {
+      await updateCensimentoPersona(selected.id, { lessonsPaid: newVal })
+      const updated = { ...selected, lessonsPaid: newVal }
+      setSelected(updated)
+      setPersone(prev => prev.map(p => p.id === selected.id ? updated : p))
+    } catch (err) { console.error('Errore aggiornamento lezioni:', err) }
+  }
+
+  async function saveLessonsPaid() {
+    if (!selected) return
+    setSaving(true)
+    try {
+      await updateCensimentoPersona(selected.id, { lessonsPaid: selected.lessonsPaid || 0 })
+    } catch (err) { console.error('Errore salvataggio lezioni:', err) }
+    finally { setSaving(false) }
+  }
+
+  // ─── Salva note ─────────────────────────────────────────
+  async function saveNote() {
+    if (!selected) return
+    setSaving(true)
+    try {
+      await updateCensimentoPersona(selected.id, { note })
+      setSelected(prev => ({ ...prev, note }))
+      setPersone(prev => prev.map(p => p.id === selected.id ? { ...p, note } : p))
+    } catch (err) { console.error('Errore salvataggio note:', err) }
+    finally { setSaving(false) }
+  }
+
+  // ─── Crea / Modifica persona ─────────────────────────────
+  function openCreate() {
+    setForm(EMPTY_FORM)
+    setEditingId(null)
+    setShowForm(true)
+  }
+
+  function openEdit(persona) {
+    setForm({
+      nome: persona.nome || '',
+      cognome: persona.cognome || '',
+      paymentType: persona.paymentType || 'mensile',
+      note: persona.note || '',
+    })
+    setEditingId(persona.id)
+    setShowForm(true)
+  }
+
+  async function handleSubmitForm() {
+    if (!form.nome.trim() || !form.cognome.trim()) {
+      alert('Nome e cognome sono obbligatori')
+      return
+    }
+    setSubmitting(true)
+    try {
+      if (editingId) {
+        await updateCensimentoPersona(editingId, {
+          nome: form.nome.trim(),
+          cognome: form.cognome.trim(),
+          paymentType: form.paymentType,
+          note: form.note.trim(),
+        })
+        setPersone(prev => prev.map(p =>
+          p.id === editingId
+            ? { ...p, nome: form.nome.trim(), cognome: form.cognome.trim(), paymentType: form.paymentType, note: form.note.trim() }
+            : p
+        ).sort((a, b) => (a.cognome || '').localeCompare(b.cognome || '')))
+        if (selected?.id === editingId) {
+          setSelected(prev => ({ ...prev, nome: form.nome.trim(), cognome: form.cognome.trim(), paymentType: form.paymentType, note: form.note.trim() }))
+        }
+      } else {
+        const docRef = await addCensimentoPersona({
+          nome: form.nome.trim(),
+          cognome: form.cognome.trim(),
+          paymentType: form.paymentType,
+          note: form.note.trim(),
+          lessonsPaid: 0,
+        })
+        const newPersona = {
+          id: docRef.id,
+          nome: form.nome.trim(),
+          cognome: form.cognome.trim(),
+          paymentType: form.paymentType,
+          note: form.note.trim(),
+          lessonsPaid: 0,
+        }
+        setPersone(prev => [...prev, newPersona].sort((a, b) => (a.cognome || '').localeCompare(b.cognome || '')))
+      }
+      setShowForm(false)
+    } catch (err) {
+      console.error('Errore salvataggio:', err)
+      alert('Errore durante il salvataggio')
+    } finally { setSubmitting(false) }
+  }
+
+  // ─── Elimina persona ────────────────────────────────────
+  function confirmDelete(persona) {
+    setToDelete(persona)
+    setShowDelete(true)
+  }
+
+  async function handleDelete() {
+    if (!toDelete) return
+    setDeleting(true)
+    try {
+      await deleteCensimentoPersona(toDelete.id)
+      setPersone(prev => prev.filter(p => p.id !== toDelete.id))
+      setShowDelete(false)
+      setToDelete(null)
+      if (selected?.id === toDelete.id) closeDetail()
+    } catch (err) {
+      console.error('Errore eliminazione:', err)
+      alert('Errore durante l\'eliminazione')
+    } finally { setDeleting(false) }
+  }
+
+  // ─── Filtro ricerca ──────────────────────────────────────
+  const filtered = persone.filter(p => {
+    const full = `${p.nome} ${p.cognome}`.toLowerCase()
+    return full.includes(search.toLowerCase())
+  })
+
+  // Badge stato pagamento
+  function getStatus(persona) {
+    if (persona.paymentType === 'mensile') {
+      // non possiamo sapere senza caricare i pagamenti, mostriamo il tipo
+      return null
+    }
+    return null
+  }
+
+  const recentMonths = Array.from({ length: 6 }, (_, i) => format(subMonths(new Date(), i), 'yyyy-MM'))
 
   if (loading) {
     return (
@@ -326,574 +242,317 @@ export default function AdminUsers() {
   return (
     <div className="space-y-4">
 
-      {/* Pagamenti in sospeso */}
-      {(unpaidSummary.mensileUnpaid.length > 0 || unpaidSummary.perLessonUnpaid.length > 0) && (
-        <Card className="bg-amber-50 border-amber-200">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="text-amber-600 mt-0.5 flex-shrink-0" size={20} />
-            <div className="flex-1 space-y-3">
-              <h3 className="font-semibold text-amber-900">Pagamenti in sospeso</h3>
-
-              {unpaidSummary.mensileUnpaid.length > 0 && (
-                <div>
-                  <p className="text-sm text-amber-800 font-medium mb-2">
-                    Mensili non pagati ({unpaidSummary.mensileUnpaid.length}):
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {unpaidSummary.mensileUnpaid.map((user) => (
-                      <Badge
-                        key={user.id}
-                        variant="warning"
-                        className="cursor-pointer hover:bg-amber-200"
-                        onClick={() => openUserDetail(user)}
-                      >
-                        {user.displayName || user.email}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {unpaidSummary.perLessonUnpaid.length > 0 && (
-                <div>
-                  <p className="text-sm text-amber-800 font-medium mb-2">
-                    A lezione con saldo negativo ({unpaidSummary.perLessonUnpaid.length}):
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {unpaidSummary.perLessonUnpaid.map(({ user, delta }) => (
-                      <Badge
-                        key={user.id}
-                        variant="warning"
-                        className="cursor-pointer hover:bg-amber-200"
-                        onClick={() => openUserDetail(user)}
-                      >
-                        {user.displayName || user.email} (-{delta})
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Header e bottone nuovo utente */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Utenti</h2>
-          <p className="text-sm text-gray-500">{filteredUsers.length} utenti totali</p>
+          <h2 className="text-xl font-bold text-gray-800">Censimento</h2>
+          <p className="text-sm text-gray-500">{persone.length} persone registrate</p>
         </div>
-        <Button onClick={() => setShowCreateUser(true)}>
+        <Button onClick={openCreate}>
           <UserPlus size={16} />
-          Nuovo Utente
+          Nuova Persona
         </Button>
       </div>
 
-      {/* Utenti in attesa di registrazione */}
-      {pendingUsers.length > 0 && (
-        <Card className="bg-blue-50 border-blue-200">
-          <div className="flex items-start gap-3">
-            <UserPlus className="text-blue-600 mt-0.5 flex-shrink-0" size={20} />
-            <div className="flex-1">
-              <h3 className="font-semibold text-blue-900 mb-2">
-                Utenti da Registrare ({pendingUsers.length})
-              </h3>
-              <p className="text-sm text-blue-800 mb-3">
-                Questi utenti sono stati aggiunti ma devono ancora essere creati in Firebase Authentication.
-              </p>
-              <div className="space-y-2">
-                {pendingUsers.map((pending) => (
-                  <div
-                    key={pending.id}
-                    className="flex items-center justify-between bg-white rounded-lg p-3 border border-blue-200"
-                  >
-                    <div>
-                      <p className="font-medium text-gray-800">{pending.displayName}</p>
-                      <p className="text-sm text-gray-500">{pending.email}</p>
-                      <Badge className="mt-1" variant={pending.paymentType === 'mensile' ? 'default' : 'secondary'}>
-                        {pending.paymentType === 'mensile' ? 'Mensile' : 'Per Lezione'}
-                      </Badge>
-                    </div>
-                    <button
-                      onClick={() => handleDeletePending(pending.id)}
-                      className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 pt-3 border-t border-blue-200">
-                <p className="text-xs text-blue-700">
-                  💡 Per completare: Firebase Console → Authentication → Add User → Copia email da qui
-                </p>
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Barra di ricerca */}
+      {/* Ricerca */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
         <Input
           type="text"
-          placeholder="Cerca utente..."
+          placeholder="Cerca per nome o cognome..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-10"
         />
       </div>
 
-      {/* Lista utenti */}
-      {filteredUsers.length === 0 ? (
-        <Card className="text-center py-8 text-gray-400">Nessun utente trovato</Card>
+      {/* Lista */}
+      {filtered.length === 0 ? (
+        <Card className="text-center py-8 text-gray-400">
+          {persone.length === 0 ? 'Nessuna persona nel censimento. Aggiungine una!' : 'Nessun risultato per la ricerca.'}
+        </Card>
       ) : (
         <div className="space-y-2">
-          {filteredUsers.map((user) => {
-            const isOk =
-              user.paymentType === 'per-lesson'
-                ? getUserBookingsCount(user.id) - (user.lessonsPaid || 0) <= 0
-                : user.paymentType === 'mensile'
-                ? currentMonthPaidMap[user.id] || false
-                : true
-
-            return (
-              <Card
-                key={user.id}
-                className={cn(
-                  'p-4 transition-all hover:shadow-md cursor-pointer',
-                  !isOk && 'bg-amber-50 border-amber-200'
-                )}
-                onClick={() => openUserDetail(user)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        'w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold',
-                        isOk ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
-                      )}
-                    >
-                      {(user.displayName || user.email || '?')[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {user.displayName || 'Nessun nome'}
-                      </p>
-                      <p className="text-xs text-gray-500">{user.email}</p>
-                    </div>
+          {filtered.map((persona) => (
+            <Card
+              key={persona.id}
+              className="p-4 transition-all hover:shadow-md cursor-pointer"
+              onClick={() => openDetail(persona)}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-sm font-semibold">
+                    {(persona.cognome || persona.nome || '?')[0].toUpperCase()}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant={user.paymentType === 'mensile' ? 'primary' : 'secondary'}>
-                      {user.paymentType === 'mensile' ? 'Mensile' : 'A lezione'}
-                    </Badge>
-                    <ChevronRight className="text-gray-400" size={18} />
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {persona.cognome} {persona.nome}
+                    </p>
+                    {persona.note && (
+                      <p className="text-xs text-gray-400 truncate max-w-[180px]">{persona.note}</p>
+                    )}
                   </div>
                 </div>
-              </Card>
-            )
-          })}
+                <div className="flex items-center gap-3">
+                  <Badge variant={persona.paymentType === 'mensile' ? 'primary' : 'secondary'}>
+                    {persona.paymentType === 'mensile' ? 'Mensile' : 'A lezione'}
+                  </Badge>
+                  <ChevronRight className="text-gray-400" size={18} />
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
       )}
 
-      {/* Modal conferma eliminazione */}
+      {/* ─── Modal dettaglio ─────────────────────────────── */}
       <Modal
-        open={showDeleteConfirm}
-        onClose={() => !deleting && setShowDeleteConfirm(false)}
-        title="Conferma eliminazione"
+        open={!!selected}
+        onClose={closeDetail}
+        title={selected ? `${selected.cognome} ${selected.nome}` : ''}
+      >
+        {selected && (() => {
+          const currentPaid = isMonthPaid(currentYearMonth)
+          const [cy, cm] = currentYearMonth.split('-')
+          const currentMonthName = format(new Date(parseInt(cy), parseInt(cm) - 1), 'MMMM yyyy', { locale: it })
+          const pastMonths = recentMonths.slice(1)
+
+          return (
+            <div className="space-y-4">
+
+              {/* Azioni header */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => { closeDetail(); openEdit(selected) }}
+                  className="text-sm text-brand-600 hover:underline"
+                >
+                  Modifica dati
+                </button>
+                <button
+                  onClick={() => { confirmDelete(selected); closeDetail() }}
+                  className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Elimina"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+
+              {/* Tipo abbonamento (sola lettura, modificabile via "Modifica dati") */}
+              <div className="flex gap-2">
+                <Badge variant={selected.paymentType === 'mensile' ? 'primary' : 'secondary'} className="text-sm px-3 py-1">
+                  {selected.paymentType === 'mensile' ? '📅 Abbonamento mensile' : '🎯 Pagamento a lezione'}
+                </Badge>
+              </div>
+
+              {/* ── Vista mensile ── */}
+              {selected.paymentType === 'mensile' && (
+                <div className="space-y-3">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    Mese corrente
+                  </label>
+                  <div className={cn(
+                    'flex items-center justify-between rounded-xl px-4 py-3 border transition-all',
+                    currentPaid ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'
+                  )}>
+                    <div>
+                      <span className="text-sm font-semibold text-gray-800 capitalize">{currentMonthName}</span>
+                      <p className={cn('text-xs font-medium', currentPaid ? 'text-emerald-600' : 'text-red-500')}>
+                        {currentPaid ? 'Pagato' : 'Non pagato'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => toggleMonthPaid(currentYearMonth, currentPaid)}
+                      className={cn(
+                        'w-10 h-10 rounded-full flex items-center justify-center transition-all',
+                        currentPaid
+                          ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
+                          : 'bg-red-100 text-red-500 hover:bg-red-200'
+                      )}
+                    >
+                      {currentPaid ? <Check size={18} /> : <X size={18} />}
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => setShowHistory(v => !v)}
+                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <ChevronDown size={14} className={cn('transition-transform', showHistory && 'rotate-180')} />
+                    Storico ({pastMonths.length} mesi)
+                  </button>
+
+                  {showHistory && (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                      {pastMonths.map((ym) => {
+                        const paid = isMonthPaid(ym)
+                        const [y, m] = ym.split('-')
+                        const name = format(new Date(parseInt(y), parseInt(m) - 1), 'MMMM yyyy', { locale: it })
+                        return (
+                          <div key={ym} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                            <span className="text-xs text-gray-600 capitalize">{name}</span>
+                            <button
+                              onClick={() => toggleMonthPaid(ym, paid)}
+                              className={cn(
+                                'w-6 h-6 rounded-full flex items-center justify-center transition-all',
+                                paid ? 'bg-emerald-100 text-emerald-600' : 'bg-red-50 text-red-400 hover:bg-red-100'
+                              )}
+                            >
+                              {paid ? <Check size={12} /> : <X size={12} />}
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Vista per lezione ── */}
+              {selected.paymentType === 'per-lesson' && (
+                <div className="space-y-3">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    Lezioni pagate
+                  </label>
+                  <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+                    <button
+                      onClick={() => updateLessonsPaid(-1)}
+                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="text-3xl font-bold text-gray-800">{selected.lessonsPaid || 0}</span>
+                    <button
+                      onClick={() => updateLessonsPaid(1)}
+                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <Button size="sm" variant="secondary" className="w-full" onClick={saveLessonsPaid} disabled={saving}>
+                    {saving ? '...' : 'Salva lezioni pagate'}
+                  </Button>
+                </div>
+              )}
+
+              {/* Note */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                  <StickyNote size={12} />
+                  Note
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Note..."
+                  rows={3}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none"
+                />
+                <Button size="sm" variant="secondary" onClick={saveNote} disabled={saving}>
+                  {saving ? '...' : 'Salva note'}
+                </Button>
+              </div>
+
+            </div>
+          )
+        })()}
+      </Modal>
+
+      {/* ─── Modal crea / modifica ────────────────────────── */}
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={editingId ? 'Modifica Persona' : 'Nuova Persona'}
       >
         <div className="space-y-4">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="text-red-600 mt-0.5 flex-shrink-0" size={20} />
-              <div className="flex-1">
-                <p className="text-sm text-red-900 font-medium mb-2">
-                  Stai per eliminare l'utente:
-                </p>
-                <p className="text-sm text-red-800">
-                  <strong>{userToDelete?.displayName || 'Nessun nome'}</strong>
-                  <br />
-                  {userToDelete?.email}
-                </p>
-              </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
+              <Input
+                value={form.nome}
+                onChange={(e) => setForm(f => ({ ...f, nome: e.target.value }))}
+                placeholder="Mario"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cognome *</label>
+              <Input
+                value={form.cognome}
+                onChange={(e) => setForm(f => ({ ...f, cognome: e.target.value }))}
+                placeholder="Rossi"
+              />
             </div>
           </div>
 
-          <p className="text-sm text-gray-600">Questa azione eliminerà permanentemente:</p>
-          <ul className="text-sm text-gray-600 list-disc list-inside space-y-1 ml-2">
-            <li>Il profilo dell'utente</li>
-            <li>Tutte le sue prenotazioni</li>
-            <li>Lo storico dei pagamenti</li>
-          </ul>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo abbonamento</label>
+            <div className="flex gap-2">
+              {['mensile', 'per-lesson'].map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setForm(f => ({ ...f, paymentType: type }))}
+                  className={cn(
+                    'flex-1 py-2.5 rounded-xl text-sm font-medium transition-all border',
+                    form.paymentType === type
+                      ? 'bg-brand-50 border-brand-200 text-brand-700'
+                      : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  )}
+                >
+                  {type === 'mensile' ? 'Mensile' : 'A lezione'}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <p className="text-sm font-medium text-red-600">
-            Questa azione non può essere annullata!
-          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note (opzionale)</label>
+            <textarea
+              value={form.note}
+              onChange={(e) => setForm(f => ({ ...f, note: e.target.value }))}
+              placeholder="Note sulla persona..."
+              rows={2}
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none"
+            />
+          </div>
 
-          <div className="flex gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setShowDeleteConfirm(false)}
-              disabled={deleting}
-              className="flex-1"
-            >
+          <div className="flex gap-2 pt-1">
+            <Button variant="secondary" onClick={() => setShowForm(false)} disabled={submitting}>
               Annulla
             </Button>
-            <Button
-              onClick={handleDeleteUser}
-              disabled={deleting}
-              className="flex-1 bg-red-600 hover:bg-red-700"
-            >
-              {deleting ? 'Eliminazione...' : 'Elimina definitivamente'}
+            <Button className="flex-1" onClick={handleSubmitForm} disabled={submitting}>
+              {submitting ? 'Salvataggio...' : editingId ? 'Salva modifiche' : 'Aggiungi'}
             </Button>
           </div>
         </div>
       </Modal>
 
-      {/* Modal dettaglio utente */}
+      {/* ─── Modal conferma eliminazione ─────────────────── */}
       <Modal
-        open={!!selectedUser}
-        onClose={() => setSelectedUser(null)}
-        title={selectedUser?.displayName || selectedUser?.email || 'Utente'}
+        open={showDelete}
+        onClose={() => !deleting && setShowDelete(false)}
+        title="Conferma eliminazione"
       >
-        {selectedUser && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span>{selectedUser.email}</span>
-                {selectedUser.isManuallyAdded && (
-                  <Badge variant="secondary" className="text-xs">
-                    Aggiunto manualmente
-                  </Badge>
-                )}
-              </div>
-              <button
-                onClick={() => confirmDeleteUser(selectedUser)}
-                className="text-red-500 hover:text-red-700 transition-colors p-2 hover:bg-red-50 rounded-lg"
-                title="Elimina utente"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-
-            {/* Tipo pagamento */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Tipo pagamento
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handlePaymentTypeChange(selectedUser.id, 'mensile')}
-                  className={cn(
-                    'flex-1 py-2 rounded-xl text-sm font-medium transition-all border',
-                    selectedUser.paymentType === 'mensile'
-                      ? 'bg-brand-50 border-brand-200 text-brand-700'
-                      : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                  )}
-                >
-                  Mensile
-                </button>
-                <button
-                  onClick={() => handlePaymentTypeChange(selectedUser.id, 'per-lesson')}
-                  className={cn(
-                    'flex-1 py-2 rounded-xl text-sm font-medium transition-all border',
-                    selectedUser.paymentType === 'per-lesson'
-                      ? 'bg-brand-50 border-brand-200 text-brand-700'
-                      : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                  )}
-                >
-                  Per lezione
-                </button>
-              </div>
-            </div>
-
-            {/* Vista pagamento mensile */}
-            {selectedUser.paymentType === 'mensile' &&
-              (() => {
-                const currentMonth = recentMonths[0]
-                const pastMonths = recentMonths.slice(1)
-                const currentPaid = isMonthPaid(currentMonth)
-                const [cy, cm] = currentMonth.split('-')
-                const currentMonthName = format(
-                  new Date(parseInt(cy), parseInt(cm) - 1),
-                  'MMMM yyyy',
-                  { locale: it }
-                )
-
-                return (
-                  <div className="space-y-3">
-                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      Mese corrente
-                    </label>
-                    <div
-                      className={cn(
-                        'flex items-center justify-between rounded-xl px-4 py-3 border transition-all',
-                        currentPaid
-                          ? 'bg-emerald-50 border-emerald-200'
-                          : 'bg-red-50 border-red-200'
-                      )}
-                    >
-                      <div>
-                        <span className="text-sm font-semibold text-gray-800 capitalize">
-                          {currentMonthName}
-                        </span>
-                        <p
-                          className={cn(
-                            'text-xs font-medium',
-                            currentPaid ? 'text-emerald-600' : 'text-red-500'
-                          )}
-                        >
-                          {currentPaid ? 'Pagato' : 'Non pagato'}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() =>
-                          handleToggleMonthPaid(selectedUser.id, currentMonth, currentPaid)
-                        }
-                        className={cn(
-                          'w-10 h-10 rounded-full flex items-center justify-center transition-all',
-                          currentPaid
-                            ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
-                            : 'bg-red-100 text-red-500 hover:bg-red-200'
-                        )}
-                      >
-                        {currentPaid ? <Check size={18} /> : <X size={18} />}
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => setShowHistory((v) => !v)}
-                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                      <ChevronDown
-                        size={14}
-                        className={cn('transition-transform', showHistory && 'rotate-180')}
-                      />
-                      Storico ({pastMonths.length} mesi)
-                    </button>
-
-                    {showHistory && (
-                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                        {pastMonths.map((ym) => {
-                          const paid = isMonthPaid(ym)
-                          const [year, month] = ym.split('-')
-                          const monthName = format(
-                            new Date(parseInt(year), parseInt(month) - 1),
-                            'MMMM yyyy',
-                            { locale: it }
-                          )
-                          return (
-                            <div
-                              key={ym}
-                              className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2"
-                            >
-                              <span className="text-xs text-gray-600 capitalize">{monthName}</span>
-                              <button
-                                onClick={() => handleToggleMonthPaid(selectedUser.id, ym, paid)}
-                                className={cn(
-                                  'w-6 h-6 rounded-full flex items-center justify-center transition-all',
-                                  paid
-                                    ? 'bg-emerald-100 text-emerald-600'
-                                    : 'bg-red-50 text-red-400 hover:bg-red-100'
-                                )}
-                              >
-                                {paid ? <Check size={12} /> : <X size={12} />}
-                              </button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-            {/* Vista pagamento per lezione */}
-            {selectedUser.paymentType === 'per-lesson' &&
-              (() => {
-                const booked = getUserBookingsCount(selectedUser.id)
-                const paid = selectedUser.lessonsPaid || 0
-                const delta = booked - paid
-
-                return (
-                  <div className="space-y-3">
-                    <div
-                      className={cn(
-                        'rounded-xl px-4 py-3 border text-center',
-                        delta > 0
-                          ? 'bg-amber-50 border-amber-200'
-                          : 'bg-emerald-50 border-emerald-200'
-                      )}
-                    >
-                      {delta > 0 ? (
-                        <>
-                          <p className="text-2xl font-bold text-amber-600">{delta}</p>
-                          <p className="text-xs font-medium text-amber-600">
-                            {delta === 1 ? 'lezione da saldare' : 'lezioni da saldare'}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-lg font-bold text-emerald-600">In pari</p>
-                          <p className="text-xs text-emerald-500">Nessun pagamento in sospeso</p>
-                        </>
-                      )}
-                    </div>
-
-                    {delta > 0 && (
-                      <Button className="w-full" onClick={() => handleSettle(selectedUser.id)}>
-                        <Check size={16} />
-                        Salda ({delta} {delta === 1 ? 'lezione' : 'lezioni'})
-                      </Button>
-                    )}
-
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>Prenotate: {booked}</span>
-                      <span>Pagate: {paid}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
-                      <span className="text-xs text-gray-500">Correggi pagate</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleLessonsPaidUpdate(selectedUser.id, -1)}
-                          className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
-                        >
-                          <Minus size={12} />
-                        </button>
-                        <span className="text-sm font-semibold text-gray-700 w-6 text-center">
-                          {paid}
-                        </span>
-                        <button
-                          onClick={() => handleLessonsPaidUpdate(selectedUser.id, 1)}
-                          className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
-                        >
-                          <Plus size={12} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="w-full"
-                      disabled={saving}
-                      onClick={async () => {
-                        setSaving(true)
-                        try {
-                          await updateUserProfile(selectedUser.id, { lessonsPaid: paid })
-                          updateUserInStore(selectedUser.id, { lessonsPaid: paid })
-                        } catch (err) {
-                          console.error('Error saving lessons paid:', err)
-                        } finally {
-                          setSaving(false)
-                        }
-                      }}
-                    >
-                      {saving ? '...' : 'Salva lezioni pagate'}
-                    </Button>
-                  </div>
-                )
-              })()}
-
-            {/* Note */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
-                <StickyNote size={12} />
-                Note
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Note sull'utente..."
-                rows={3}
-                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent resize-none"
-              />
-              <Button size="sm" variant="secondary" onClick={handleSaveNotes} disabled={saving}>
-                {saving ? '...' : 'Salva note'}
-              </Button>
+        <div className="space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+            <AlertCircle className="text-red-600 mt-0.5 flex-shrink-0" size={20} />
+            <div>
+              <p className="text-sm text-red-900 font-medium">Stai per eliminare:</p>
+              <p className="text-sm text-red-800 mt-1">
+                <strong>{toDelete?.cognome} {toDelete?.nome}</strong>
+              </p>
             </div>
           </div>
-        )}
-      </Modal>
-
-      {/* Modal Creazione Nuovo Utente */}
-      <Modal
-        open={showCreateUser}
-        onClose={() => setShowCreateUser(false)}
-        title="Crea Nuovo Utente"
-      >
-        <form onSubmit={handleCreateUser} className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-            <p className="text-sm text-blue-800 font-medium mb-1">
-              ℹ️ Come funziona:
-            </p>
-            <ol className="text-xs text-blue-700 space-y-1 ml-4 list-decimal">
-              <li>Aggiungi qui email e nome dell'utente</li>
-              <li>Vai su Firebase Console → Authentication</li>
-              <li>Clicca "Add User" e crea l'account</li>
-              <li>L'utente può fare login con le credenziali che gli fornisci</li>
-            </ol>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nome Completo *
-            </label>
-            <Input
-              type="text"
-              value={newUserData.displayName}
-              onChange={(e) => setNewUserData({ ...newUserData, displayName: e.target.value })}
-              placeholder="Mario Rossi"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email *
-            </label>
-            <Input
-              type="email"
-              value={newUserData.email}
-              onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
-              placeholder="mario.rossi@email.com"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Tipo di Pagamento
-            </label>
-            <select
-              value={newUserData.paymentType}
-              onChange={(e) => setNewUserData({ ...newUserData, paymentType: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-300"
-            >
-              <option value="mensile">Mensile</option>
-              <option value="per-lesson">Per Lezione</option>
-            </select>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setShowCreateUser(false)}
-              disabled={creating}
-            >
+          <p className="text-sm text-red-600 font-medium">Questa azione non può essere annullata.</p>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowDelete(false)} disabled={deleting} className="flex-1">
               Annulla
             </Button>
-            <Button type="submit" className="flex-1" disabled={creating}>
-              {creating ? 'Creazione...' : 'Crea Utente'}
+            <Button onClick={handleDelete} disabled={deleting} className="flex-1 bg-red-600 hover:bg-red-700">
+              {deleting ? 'Eliminazione...' : 'Elimina'}
             </Button>
           </div>
-        </form>
+        </div>
       </Modal>
+
     </div>
   )
 }
