@@ -3,16 +3,11 @@ import { format } from 'date-fns'
 import { it } from 'date-fns/locale'
 import {
   Check,
-  X,
   Minus,
   Plus,
   UserPlus,
   Calendar,
 } from 'lucide-react'
-
-import { Button } from '../../components/ui/button'
-import { Badge } from '../../components/ui/badge'
-import { cn } from '../../lib/utils'
 
 export default function AdminUsers({ users = [], onUpdateUser, onCreateUser }) {
   const [selectedUser, setSelectedUser] = useState(null)
@@ -59,10 +54,13 @@ export default function AdminUsers({ users = [], onUpdateUser, onCreateUser }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Utenti</h1>
-        <Button onClick={handleCreateUser}>
+        <button
+          onClick={handleCreateUser}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-800"
+        >
           <UserPlus size={16} />
           Nuovo utente
-        </Button>
+        </button>
       </div>
 
       {/* Layout */}
@@ -77,12 +75,11 @@ export default function AdminUsers({ users = [], onUpdateUser, onCreateUser }) {
             <button
               key={user.id}
               onClick={() => setSelectedUser(user)}
-              className={cn(
-                'w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition',
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${
                 selectedUser?.id === user.id
                   ? 'bg-gray-100'
                   : 'hover:bg-gray-50'
-              )}
+              }`}
             >
               {user.name}
             </button>
@@ -96,7 +93,6 @@ export default function AdminUsers({ users = [], onUpdateUser, onCreateUser }) {
               user={selectedUser}
               currentYearMonth={currentYearMonth}
               currentMonthLabel={currentMonthLabel}
-              onUpdateUser={onUpdateUser}
               onSettleLessons={handleSettleLessons}
               onToggleMonthPaid={handleToggleMonthPaid}
               onSettleMonth={handleSettleMonth}
@@ -163,10 +159,13 @@ function UserDetails({
         </div>
 
         {delta > 0 && (
-          <Button className="w-full" onClick={() => onSettleLessons(user.id, delta)}>
+          <button
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-800"
+            onClick={() => onSettleLessons(user.id, delta)}
+          >
             <Check size={16} />
             Salda ({delta})
-          </Button>
+          </button>
         )}
 
         <div className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
@@ -217,10 +216,13 @@ function UserDetails({
         </div>
 
         {!currentPaid && (
-          <Button className="w-full" onClick={() => onSettleMonth(user.id)}>
+          <button
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-800"
+            onClick={() => onSettleMonth(user.id)}
+          >
             <Check size={16} />
             Salda
-          </Button>
+          </button>
         )}
 
         <div className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
