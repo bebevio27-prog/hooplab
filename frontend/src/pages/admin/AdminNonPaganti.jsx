@@ -78,9 +78,10 @@ export default function AdminNonPaganti() {
   // ── Calcoli entrate ──────────────────────────────────────
   const mensili = persone.filter(p => isMensile(p.paymentType))
   const perLezione = persone.filter(p => p.paymentType === 'per-lesson')
+  const workshop = persone.filter(p => p.paymentType === 'workshop')
 
   // Per ogni tipo mensile: quanti hanno pagato questo mese
-  const mensileBreakdown = PAYMENT_TYPES.filter(t => t.value !== 'per-lesson').map(type => {
+  const mensileBreakdown = PAYMENT_TYPES.filter(t => t.value !== 'per-lesson' && t.value !== 'workshop').map(type => {
     const group = mensili.filter(p => p.paymentType === type.value)
     const paganti = group.filter(p => paymentsData[p.id])
     const nonPaganti = group.filter(p => !paymentsData[p.id])
@@ -95,11 +96,13 @@ export default function AdminNonPaganti() {
   const perLessoneTotale = perLezione.reduce((s, p) => s + (p.lessonsPaid || 0), 0)
   const entrateLezioni = perLessoneTotale * 20  // PREZZO_LEZIONE = 20
 
+  const workshopTotale = workshop.reduce((s, p) => s + (p.workshopRevenue || 0), 0)
+
   // ── Spese del mese ───────────────────────────────────────
   const speseDelMese = spese.filter(s => s.yearMonth === selectedMonth)
   const totaleSpese = speseDelMese.reduce((s, sp) => s + sp.amount, 0)
 
-  const totaleEntrate = entrateMensile + entrateLezioni
+  const totaleEntrate = entrateMensile + entrateLezioni + workshopTotale
   const bilancio = totaleEntrate - totaleSpese
 
   // Crediti mensili non ancora pagati
@@ -186,6 +189,12 @@ export default function AdminNonPaganti() {
                     <span className="font-medium">€{entrateLezioni.toFixed(2)}</span>
                   </div>
                 )}
+                {workshopTotale > 0 && (
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Workshop ({workshop.length})</span>
+                    <span className="font-medium">€{workshopTotale.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -223,6 +232,7 @@ export default function AdminNonPaganti() {
               { key: 'riepilogo', label: 'Riepilogo', icon: BarChart3 },
               { key: 'mensili',   label: `Abbonamenti (${mensili.length})`, icon: Users },
               { key: 'lezioni',   label: `A Lezione (${perLezione.length})`, icon: BookOpen },
+              { key: 'workshop',  label: `Workshop (${workshop.length})`, icon: Calendar },
             ].map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -266,6 +276,13 @@ export default function AdminNonPaganti() {
                       <p className="text-xs text-gray-400">{perLessoneTotale} lezioni × €20</p>
                     </div>
                     <p className="text-sm font-bold text-emerald-600">€{entrateLezioni.toFixed(2)}</p>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Workshop</p>
+                      <p className="text-xs text-gray-400">{workshop.length} workshop</p>
+                    </div>
+                    <p className="text-sm font-bold text-emerald-600">€{workshopTotale.toFixed(2)}</p>
                   </div>
                   <div className="flex justify-between font-semibold text-sm pt-1">
                     <span className="text-gray-600">Totale entrate</span>
@@ -390,6 +407,34 @@ export default function AdminNonPaganti() {
                       </div>
                       <p className="text-sm font-bold text-emerald-600">
                         €{((persona.lessonsPaid || 0) * 20).toFixed(2)}
+                      </p>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Tab: Workshop */}
+          {activeTab === 'workshop' && (
+            <div className="space-y-2">
+              {workshop.length === 0 ? (
+                <Card><p className="text-sm text-gray-400 text-center py-6">Nessun workshop registrato</p></Card>
+              ) : (
+                workshop.map(persona => (
+                  <Card key={persona.id} className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-sm font-bold">
+                          {(persona.cognome || '?')[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{persona.cognome} {persona.nome}</p>
+                          <p className="text-xs text-gray-500">Workshop</p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-bold text-emerald-600">
+                        €{(persona.workshopRevenue || 0).toFixed(2)}
                       </p>
                     </div>
                   </Card>

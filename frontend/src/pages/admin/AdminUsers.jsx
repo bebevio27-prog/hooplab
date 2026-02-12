@@ -25,6 +25,7 @@ export const PAYMENT_TYPES = [
   { value: 'bisettimanale',   label: 'Bisettimanale',   short: '2x/sett', price: 85 },
   { value: 'trisettimanale',  label: 'Trisettimanale',  short: '3x/sett', price: 115 },
   { value: 'per-lesson',      label: 'A lezione',       short: 'lezione', price: 20 },
+  { value: 'workshop',        label: 'Workshop',        short: 'workshop', price: 0 },
 ]
 
 export function getPaymentTypeInfo(value) {
@@ -32,7 +33,7 @@ export function getPaymentTypeInfo(value) {
 }
 
 export function isMensile(paymentType) {
-  return paymentType !== 'per-lesson'
+  return paymentType !== 'per-lesson' && paymentType !== 'workshop'
 }
 
 const EMPTY_FORM = { nome: '', cognome: '', paymentType: 'monosettimanale', note: '' }
@@ -124,6 +125,26 @@ export default function AdminUsers() {
     finally { setSaving(false) }
   }
 
+  async function updateWorkshopRevenue(delta) {
+    if (!selected) return
+    const newVal = Math.max(0, (selected.workshopRevenue || 0) + delta)
+    try {
+      await updateCensimentoPersona(selected.id, { workshopRevenue: newVal })
+      const updated = { ...selected, workshopRevenue: newVal }
+      setSelected(updated)
+      setPersone(prev => prev.map(p => p.id === selected.id ? updated : p))
+    } catch (err) { console.error('Errore aggiornamento ricavato workshop:', err) }
+  }
+
+  async function saveWorkshopRevenue() {
+    if (!selected) return
+    setSaving(true)
+    try {
+      await updateCensimentoPersona(selected.id, { workshopRevenue: selected.workshopRevenue || 0 })
+    } catch (err) { console.error('Errore salvataggio ricavato workshop:', err) }
+    finally { setSaving(false) }
+  }
+
   async function saveNote() {
     if (!selected) return
     setSaving(true)
@@ -169,8 +190,12 @@ export default function AdminUsers() {
         )
         if (selected?.id === editingId) setSelected(prev => ({ ...prev, ...payload }))
       } else {
-        const docRef = await addCensimentoPersona({ ...payload, lessonsPaid: 0 })
-        const newP = { id: docRef.id, ...payload, lessonsPaid: 0 }
+        const docRef = await addCensimentoPersona({ 
+          ...payload, 
+          lessonsPaid: 0,
+          workshopRevenue: 0 
+        })
+        const newP = { id: docRef.id, ...payload, lessonsPaid: 0, workshopRevenue: 0 }
         setPersone(prev => [...prev, newP].sort((a, b) => (a.cognome || '').localeCompare(b.cognome || '')))
       }
       setShowForm(false)
@@ -405,6 +430,33 @@ export default function AdminUsers() {
                 </div>
               )}
 
+              {/* ── Workshop ── */}
+              {selected.paymentType === 'workshop' && (
+                <div className="space-y-3">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    Ricavato Workshop (€)
+                  </label>
+                  <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+                    <button
+                      onClick={() => updateWorkshopRevenue(-10)}
+                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="text-3xl font-bold text-gray-800">€{selected.workshopRevenue || 0}</span>
+                    <button
+                      onClick={() => updateWorkshopRevenue(10)}
+                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <Button size="sm" variant="secondary" className="w-full" onClick={saveWorkshopRevenue} disabled={saving}>
+                    {saving ? '...' : 'Salva ricavato workshop'}
+                  </Button>
+                </div>
+              )}
+
               {/* Note */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
@@ -468,7 +520,9 @@ export default function AdminUsers() {
                   )}
                 >
                   <span className="block">{type.label}</span>
-                  <span className="text-xs opacity-70">€{type.price}/mese</span>
+                  <span className="text-xs opacity-70">
+                    {type.value === 'workshop' ? 'Ricavato variabile' : `€${type.price}/mese`}
+                  </span>
                 </button>
               ))}
             </div>
