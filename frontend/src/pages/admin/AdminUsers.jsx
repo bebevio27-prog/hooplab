@@ -49,6 +49,10 @@ export default function AdminUsers() {
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  
+  // State per input diretti
+  const [lessonsPaidInput, setLessonsPaidInput] = useState('')
+  const [workshopRevenueInput, setWorkshopRevenueInput] = useState('')
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -77,6 +81,8 @@ export default function AdminUsers() {
     setSelected(persona)
     setNote(persona.note || '')
     setShowHistory(false)
+    setLessonsPaidInput(String(persona.lessonsPaid || 0))
+    setWorkshopRevenueInput(String(persona.workshopRevenue || 0))
     if (isMensile(persona.paymentType)) {
       try {
         const p = await getCensimentoPayments(persona.id)
@@ -107,42 +113,58 @@ export default function AdminUsers() {
 
   async function updateLessonsPaid(delta) {
     if (!selected) return
-    const newVal = Math.max(0, (selected.lessonsPaid || 0) + delta)
-    try {
-      await updateCensimentoPersona(selected.id, { lessonsPaid: newVal })
-      const updated = { ...selected, lessonsPaid: newVal }
-      setSelected(updated)
-      setPersone(prev => prev.map(p => p.id === selected.id ? updated : p))
-    } catch (err) { console.error('Errore aggiornamento lezioni:', err) }
+    const currentVal = parseInt(lessonsPaidInput) || 0
+    const newVal = Math.max(0, currentVal + delta)
+    setLessonsPaidInput(String(newVal))
   }
 
   async function saveLessonsPaid() {
     if (!selected) return
+    const value = parseInt(lessonsPaidInput) || 0
+    if (value < 0) {
+      alert('Il numero di lezioni non può essere negativo')
+      return
+    }
     setSaving(true)
     try {
-      await updateCensimentoPersona(selected.id, { lessonsPaid: selected.lessonsPaid || 0 })
-    } catch (err) { console.error('Errore salvataggio lezioni:', err) }
-    finally { setSaving(false) }
+      await updateCensimentoPersona(selected.id, { lessonsPaid: value })
+      const updated = { ...selected, lessonsPaid: value }
+      setSelected(updated)
+      setPersone(prev => prev.map(p => p.id === selected.id ? updated : p))
+    } catch (err) { 
+      console.error('Errore salvataggio lezioni:', err)
+      alert('Errore durante il salvataggio')
+    } finally { 
+      setSaving(false) 
+    }
   }
 
   async function updateWorkshopRevenue(delta) {
     if (!selected) return
-    const newVal = Math.max(0, (selected.workshopRevenue || 0) + delta)
-    try {
-      await updateCensimentoPersona(selected.id, { workshopRevenue: newVal })
-      const updated = { ...selected, workshopRevenue: newVal }
-      setSelected(updated)
-      setPersone(prev => prev.map(p => p.id === selected.id ? updated : p))
-    } catch (err) { console.error('Errore aggiornamento ricavato workshop:', err) }
+    const currentVal = parseFloat(workshopRevenueInput) || 0
+    const newVal = Math.max(0, currentVal + delta)
+    setWorkshopRevenueInput(String(newVal))
   }
 
   async function saveWorkshopRevenue() {
     if (!selected) return
+    const value = parseFloat(workshopRevenueInput) || 0
+    if (value < 0) {
+      alert('Il ricavato non può essere negativo')
+      return
+    }
     setSaving(true)
     try {
-      await updateCensimentoPersona(selected.id, { workshopRevenue: selected.workshopRevenue || 0 })
-    } catch (err) { console.error('Errore salvataggio ricavato workshop:', err) }
-    finally { setSaving(false) }
+      await updateCensimentoPersona(selected.id, { workshopRevenue: value })
+      const updated = { ...selected, workshopRevenue: value }
+      setSelected(updated)
+      setPersone(prev => prev.map(p => p.id === selected.id ? updated : p))
+    } catch (err) { 
+      console.error('Errore salvataggio ricavato workshop:', err)
+      alert('Errore durante il salvataggio')
+    } finally { 
+      setSaving(false) 
+    }
   }
 
   async function saveNote() {
@@ -409,23 +431,30 @@ export default function AdminUsers() {
                   <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                     Lezioni pagate
                   </label>
-                  <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => updateLessonsPaid(-1)}
-                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 flex-shrink-0"
                     >
                       <Minus size={14} />
                     </button>
-                    <span className="text-3xl font-bold text-gray-800">{selected.lessonsPaid || 0}</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={lessonsPaidInput}
+                      onChange={(e) => setLessonsPaidInput(e.target.value)}
+                      className="text-center text-xl font-bold"
+                      placeholder="0"
+                    />
                     <button
                       onClick={() => updateLessonsPaid(1)}
-                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 flex-shrink-0"
                     >
                       <Plus size={14} />
                     </button>
                   </div>
                   <Button size="sm" variant="secondary" className="w-full" onClick={saveLessonsPaid} disabled={saving}>
-                    {saving ? '...' : 'Salva lezioni pagate'}
+                    {saving ? 'Salvataggio...' : 'Salva lezioni pagate'}
                   </Button>
                 </div>
               )}
@@ -436,23 +465,34 @@ export default function AdminUsers() {
                   <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                     Ricavato Workshop (€)
                   </label>
-                  <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => updateWorkshopRevenue(-10)}
-                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 flex-shrink-0"
                     >
                       <Minus size={14} />
                     </button>
-                    <span className="text-3xl font-bold text-gray-800">€{selected.workshopRevenue || 0}</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-400">€</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={workshopRevenueInput}
+                        onChange={(e) => setWorkshopRevenueInput(e.target.value)}
+                        className="text-center text-xl font-bold pl-8"
+                        placeholder="0.00"
+                      />
+                    </div>
                     <button
                       onClick={() => updateWorkshopRevenue(10)}
-                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
+                      className="w-9 h-9 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 flex-shrink-0"
                     >
                       <Plus size={14} />
                     </button>
                   </div>
                   <Button size="sm" variant="secondary" className="w-full" onClick={saveWorkshopRevenue} disabled={saving}>
-                    {saving ? '...' : 'Salva ricavato workshop'}
+                    {saving ? 'Salvataggio...' : 'Salva ricavato workshop'}
                   </Button>
                 </div>
               )}
