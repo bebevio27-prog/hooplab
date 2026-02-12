@@ -38,7 +38,10 @@ export async function createCorso(data) {
 }
 
 export async function updateCorso(corsoId, data) {
-  return updateDoc(doc(db, 'corsi', corsoId), data)
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([_, value]) => value !== undefined)
+  )
+  return updateDoc(doc(db, 'corsi', corsoId), cleanData)
 }
 
 export async function deleteCorso(corsoId) {
@@ -162,7 +165,10 @@ export async function getUserProfile(userId) {
 }
 
 export async function updateUserProfile(userId, data) {
-  return updateDoc(doc(db, 'users', userId), data)
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([_, value]) => value !== undefined)
+  )
+  return updateDoc(doc(db, 'users', userId), cleanData)
 }
 
 export async function createUserProfile(userId, data) {
@@ -235,7 +241,10 @@ export async function createSpesaFissa(data) {
 }
 
 export async function updateSpesaFissa(spesaId, data) {
-  return updateDoc(doc(db, 'speseFisse', spesaId), data)
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([_, value]) => value !== undefined)
+  )
+  return updateDoc(doc(db, 'speseFisse', spesaId), cleanData)
 }
 
 export async function deleteSpesaFissa(spesaId) {
@@ -284,7 +293,10 @@ export async function deletePendingUser(pendingId) {
 }
 
 export async function updatePendingUser(pendingId, data) {
-  return updateDoc(doc(db, 'pendingUsers', pendingId), data)
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([_, value]) => value !== undefined)
+  )
+  return updateDoc(doc(db, 'pendingUsers', pendingId), cleanData)
 }
 
 // ─── Censimento (anagrafica indipendente) ─────────────────
@@ -307,15 +319,25 @@ export async function getCensimento() {
 }
 
 export async function addCensimentoPersona(data) {
-  return addDoc(collection(db, 'censimento'), {
+  const personaData = {
     ...data,
-    lessonsPaid: data.paymentType === 'per-lesson' ? (data.lessonsPaid || 0) : undefined,
     createdAt: serverTimestamp(),
-  })
+  }
+  
+  // Aggiungi lessonsPaid solo per paymentType 'per-lesson'
+  if (data.paymentType === 'per-lesson') {
+    personaData.lessonsPaid = data.lessonsPaid || 0
+  }
+  
+  return addDoc(collection(db, 'censimento'), personaData)
 }
 
 export async function updateCensimentoPersona(personaId, data) {
-  return updateDoc(doc(db, 'censimento', personaId), data)
+  // Rimuovi campi undefined prima di aggiornare
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([_, value]) => value !== undefined)
+  )
+  return updateDoc(doc(db, 'censimento', personaId), cleanData)
 }
 
 export async function deleteCensimentoPersona(personaId) {
