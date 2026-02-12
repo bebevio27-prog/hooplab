@@ -50,9 +50,9 @@ export async function getCorsi() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-export async function getAllPersone(corsoId) {
-  const snap = await getAllPersone(query(collection(db, 'utenti'), orderBy('name')))
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null
+export async function getAllUtenti() {
+  const snap = await getDocs(query(collection(db, 'utenti'), orderBy('name')))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
 export async function getCorso(corsoId) {
@@ -334,3 +334,9 @@ export async function setCensimentoMonthPaid(personaId, yearMonth, paid) {
   const ref = doc(db, 'censimento', personaId, 'payments', yearMonth)
   return setDoc(ref, { paid, updatedAt: serverTimestamp() }, { merge: true })
 }
+
+// Alias per compatibilità
+export { getCensimento as getAllPersone }
+export { addCensimentoPersona as createPersona }
+export { updateCensimentoPersona as updatePersona }
+export { deleteCensimentoPersona as deletePersona }
